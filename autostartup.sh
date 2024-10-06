@@ -771,7 +771,7 @@ uninstall() {
 }
 
 clear
-echo -e "${cyan}By --> Peyman * Github.com/Ptechgithub * ${rest}"
+echo -e "${cyan}originaly from visit for info   --> Peyman * Github.com/Ptechgithub * ${rest}"
 echo ""
 check_status
 echo -e "${purple}***********************${rest}"
