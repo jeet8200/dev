@@ -365,7 +365,7 @@ schedule_reboot() {
     fi
 }
 # Install Reverse nginx
-install() {
+setup_nginx_reverse_proxy() {
     # Check if NGINX is already installed
 	if [ -d "/etc/letsencrypt/live/$saved_domain" ]; then
 	    echo -e "${yellow}×××××××××××××××××××××××${rest}"
@@ -513,8 +513,8 @@ main_menu() {
             12) create_swap ;;
             13) change_ssh_port ;;
             14) schedule_reboot ;;
-            15) install;;
             15) uninstall_nginx ;;
+	    16) setup_nginx_reverse_proxy;;
              0) exit 0 ;;
             *) handle_error "Invalid choice. Please enter a number between 0 and 13." ;;
         esac
