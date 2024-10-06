@@ -18,3 +18,4 @@ bash autostartup.sh;
 13) change_ssh_port ;;
 14) reboot evry 2 day ;;
 15) uninstall_nginx ;;
+16) nginx reverse proxy setups for grpc ws for v2ray configs path secure  (TESTING);;
