@@ -494,7 +494,7 @@ main_menu() {
         echo -e " ${YELLOW}13.${NC} Change SSH port"
         echo -e " ${YELLOW}14.${NC} Schedule system reboot every 2 days"
         echo -e " ${YELLOW}15.${NC} Uninstall Nginx"
-        echo -e " ${YELLOW}16.${NC} Nginx reverse proxy setup with path for x-ui v2ray configs"
+        echo -e " ${YELLOW}16.${NC} Nginx reverse proxy setup with path for x-ui v2ray configs TESTING....."
         echo -e " ${YELLOW}0.${NC} Exit"
         echo -e "${LGREEN}=====================${NC}"
         read -p "Enter your choice: " main_choice
