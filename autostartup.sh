@@ -364,6 +364,117 @@ schedule_reboot() {
         handle_error "Failed to schedule system reboot."
     fi
 }
+# Install Reverse nginx
+install() {
+    # Check if NGINX is already installed
+	if [ -d "/etc/letsencrypt/live/$saved_domain" ]; then
+	    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+		echo -e "${cyan}N R P${green} is already installed.${rest}"
+		echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	else
+	# Ask the user for the domain name
+	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	read -p "Enter your domain name: " domain
+	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	read -p "Enter GRPC Path (Service Name) [default: grpc]: " grpc_path
+	grpc_path=${grpc_path:-grpc}
+	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	read -p "Enter WebSocket Path (Service Name) [default: ws]: " ws_path
+	ws_path=${ws_path:-ws}
+	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	check_dependencies
+	
+	echo "$domain" > "$d_f"
+	# Copy default NGINX config to your website
+	sudo cp /etc/nginx/sites-available/default "/etc/nginx/sites-available/$domain" || display_error "Failed to copy NGINX config"
+	
+	# Enable your website
+	sudo ln -s "/etc/nginx/sites-available/$domain" "/etc/nginx/sites-enabled/" || display_error "Failed to enable your website"
+	
+	# Remove default_server from the copied config
+	sudo sed -i -e 's/listen 80 default_server;/listen 80;/g' \
+	              -e 's/listen \[::\]:80 default_server;/listen \[::\]:80;/g' \
+	              -e "s/server_name _;/server_name $domain;/g" "/etc/nginx/sites-available/$domain" || display_error "Failed to modify NGINX config"
+	
+	# Restart NGINX service
+	sudo systemctl restart nginx || display_error "Failed to restart NGINX service"
+	
+	# Allow ports in firewall
+	sudo ufw allow 80/tcp || display_error "Failed to allow port 80"
+	sudo ufw allow 443/tcp || display_error "Failed to allow port 443"
+	
+	# Get a free SSL certificate
+	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	echo -e "${green}Get SSL certificate ${rest}"
+	sudo certbot --nginx -d "$domain" --register-unsafely-without-email --non-interactive --agree-tos --redirect || display_error "Failed to obtain SSL certificate"
+	
+	# NGINX config file content
+	cat <<EOL > /etc/nginx/sites-available/$domain
+server {
+        root /var/www/html;
+        
+        # Add index.php to the list if you are using PHP
+        index index.html index.htm index.nginx-debian.html;
+        server_name $domain;
+        
+        location / {
+                # First attempt to serve request as file, then
+                # as directory, then fall back to displaying a 404.
+                try_files \$uri \$uri/ =404;
+        }
+        # GRPC configuration
+	    location ~ ^/$grpc_path/(?<port>\d+)/(.*)$ {
+	        if (\$content_type !~ "application/grpc") {
+	            return 404;
+	        }
+	        set \$grpc_port \$port;
+	        client_max_body_size 0;
+	        client_body_buffer_size 512k;
+	        grpc_set_header X-Real-IP \$remote_addr;
+	        client_body_timeout 1w;
+	        grpc_read_timeout 1w;
+	        grpc_send_timeout 1w;
+	        grpc_pass grpc://127.0.0.1:\$grpc_port;
+	    }
+	    # WebSocket configuration
+	    location ~ ^/$ws_path/(?<port>\d+)$ {
+	        if (\$http_upgrade != "websocket") {
+	            return 404;
+	        }
+	        set \$ws_port \$port;
+	        proxy_pass http://127.0.0.1:\$ws_port/;
+	        proxy_redirect off;
+	        proxy_http_version 1.1;
+	        proxy_set_header Upgrade \$http_upgrade;
+	        proxy_set_header Connection "upgrade";
+	        proxy_set_header Host \$host;
+	        proxy_set_header X-Real-IP \$remote_addr;
+	        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+	    }
+	
+    listen [::]:443 ssl http2 ipv6only=on; # managed by Certbot
+    listen 443 ssl http2; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+}
+server {
+    if (\$host = $domain) {
+        return 301 https://\$host\$request_uri;
+    } # managed by Certbot
+        listen 80;
+        listen [::]:80;
+        server_name $domain;
+    return 404; # managed by Certbot
+}
+EOL
+	
+	# Restart NGINX service
+	sudo systemctl restart nginx || display_error "Failed to restart NGINX service"
+	check_installation
+  fi
+}
 # Main menu
 main_menu() {
     while true; do
@@ -383,6 +494,7 @@ main_menu() {
         echo -e " ${YELLOW}13.${NC} Change SSH port"
         echo -e " ${YELLOW}14.${NC} Schedule system reboot every 2 days"
         echo -e " ${YELLOW}15.${NC} Uninstall Nginx"
+        echo -e " ${YELLOW}16.${NC} Nginx reverse proxy setup with path for x-ui v2ray configs"
         echo -e " ${YELLOW}0.${NC} Exit"
         echo -e "${LGREEN}=====================${NC}"
         read -p "Enter your choice: " main_choice
@@ -401,6 +513,7 @@ main_menu() {
             12) create_swap ;;
             13) change_ssh_port ;;
             14) schedule_reboot ;;
+            15) install;;
             15) uninstall_nginx ;;
              0) exit 0 ;;
             *) handle_error "Invalid choice. Please enter a number between 0 and 13." ;;
