@@ -516,7 +516,7 @@ main_menu() {
             15) uninstall_nginx ;;
 	    16) setup_nginx_reverse_proxy;;
              0) exit 0 ;;
-            *) handle_error "Invalid choice. Please enter a number between 0 and 13." ;;
+            *) handle_error "Invalid choice. Please enter a number between 0 and 16." ;;
         esac
     done
 }
