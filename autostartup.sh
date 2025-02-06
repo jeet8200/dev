@@ -12,6 +12,76 @@ handle_error() {
     echo -e "${RED}Error: $1${NC}" >&2
     exit 1
 }
+###
+#adding or removing functions to/from the list 
+
+# Function to list all available functions in this script
+list_functions() {
+    echo "Available functions:"
+    grep -E '^[a-zA-Z0-9_]+\(\)' "$0" | awk -F '(' '{print NR ") " $1}'
+}
+
+# Function to add a new function to this script
+add_function() {
+    read -p "Enter the function name to add: " func_name
+
+    # Check if function already exists
+    if grep -q "^$func_name()" "$0"; then
+        echo "Function '$func_name' already exists!"
+        return
+    fi
+
+    echo "Enter the function code (end with an empty line):"
+    func_code=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && break
+        func_code+="$line"$'\n'
+    done
+
+    # Append the function to the script
+    echo -e "\n$func_name() {\n$func_code\n}" >> "$0"
+    echo "Function '$func_name' added successfully!"
+
+    # Make sure the script remains executable
+    chmod +x "$0"
+}
+
+# Function to remove an existing function
+remove_function() {
+    list_functions
+    read -p "Enter the function name to remove: " func_name
+
+    # Check if function exists
+    if ! grep -q "^$func_name()" "$0"; then
+        echo "Function '$func_name' does not exist!"
+        return
+    fi
+
+    # Remove the function
+    sed -i "/^$func_name()/,/^}/d" "$0"
+    echo "Function '$func_name' removed successfully!"
+}
+
+# Function to manage menu items (add/remove functions)
+manage_functions() {
+    while true; do
+        echo -e "\nManage Functions Menu:"
+        echo "1) List functions"
+        echo "2) Add function"
+        echo "3) Remove function"
+        echo "4) Back to main menu"
+        read -p "Choose an option: " choice
+
+        case $choice in
+            1) list_functions ;;
+            2) add_function ;;
+            3) remove_function ;;
+            4) break ;;
+            *) echo "Invalid choice! Please try again." ;;
+        esac
+    done
+}
+
 
 # Function to update the package lists, upgrade installed packages, and clean up
 update_system() {
@@ -629,6 +699,24 @@ install_random_fake_site() {
     echo -e "${green}Website Installed Successfully${rest}"
     echo -e "${yellow}×××××××××××××××××××××××${rest}"
 }
+#managing menu
+# Function to manage menu items (add/remove)
+manage_menu_items() {
+    echo "1) List functions"
+    echo "2) Add function"
+    echo "3) Remove function"
+    echo "4) Exit"
+    read -p "Choose an option: " choice
+
+    case $choice in
+        1) list_functions ;;
+        2) add_function ;;
+        3) remove_function ;;
+        4) return ;;
+        *) echo "Invalid choice!";;
+    esac
+}
+
 
 # Limitation
 add_limit() {
@@ -711,6 +799,8 @@ chmod +x /root/usage/limit.sh && /root/usage/limit.sh
 # Schedule the script to run every 24 hours using cron job
 (crontab -l 2>/dev/null | grep -v '/root/usage/limit.sh' ; echo '0 0 * * * /root/usage/limit.sh > /dev/null 2>&1;') | crontab -
 }
+
+#--------------
 
 # Change port
 change_port() {
@@ -843,6 +933,7 @@ main_menu() {
         echo -e " ${YELLOW}14.${NC} Schedule system reboot every 2 days"
         echo -e " ${YELLOW}15.${NC} Uninstall Nginx"
         echo -e " ${YELLOW}16.${NC} Nginx reverse proxy setup with path for x-ui v2ray configs TESTING....."
+	echo -e " ${YELLOW}17.${NC} Manage Functions"
         echo -e " ${YELLOW}0.${NC} Exit"
         echo -e "${LGREEN}=====================${NC}"
         read -p "Enter your choice: " main_choice
@@ -863,6 +954,7 @@ main_menu() {
             14) schedule_reboot ;;
             15) uninstall_nginx ;;
 	    16) nginx_reverseProxy;;
+	    17) manage_functions;;  # This is the new function
              0) exit 0 ;;
             *) handle_error "Invalid choice. Please enter a number between 0 and 16." ;;
         esac
