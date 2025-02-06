@@ -20,3 +20,4 @@ bash autostartup.sh;
 15) uninstall_nginx ;;
 16) nginx reverse proxy setups for grpc ws for v2ray configs path secure  (TESTING);;
 ("ps") adding some example of using nginx for fake site and revers proxy with cloudflare cdn its so far avoide detection by gfw (under the test)
+17)  17) manage_functions;;  # dynamicly adding or removing functions from the menu list
