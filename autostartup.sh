@@ -85,7 +85,7 @@ manage_functions() {
 
 # Function to update the package lists, upgrade installed packages, and clean up
 update_system() {
-    if sudo apt update -y && sudo apt upgrade -y && sudo apt autoclean -y && sudo apt autoremove -y; then
+    if sudo apt update -y && sudo apt upgrade -y && sudo apt autoclean -y && sudo apt autoremove -y sh -c 'apt-get update; apt-get upgrade -y; apt-get dist-upgrade -y; apt-get autoremove -y; apt-get autoclean -y'; then
         echo -e "${GREEN}System update completed successfully.${NC}"
     else
         handle_error "Failed to update system."
@@ -94,7 +94,7 @@ update_system() {
 
 # Function to install sudo and wget
 install_utilities() {
-    if sudo apt install && sudo apt install ufw -y sudo wget  ; then
+    if sudo apt install && sudo apt install ufw -y sudo wget apt-get install -y software-properties-common ufw wget curl git socat cron busybox bash-completion locales nano apt-utils  ; then
         echo -e "${GREEN}Utilities (sudo and wget and ufw ) installed successfully.${NC}"
     else
         handle_error "Failed to install utilities (sudo and wget)."
