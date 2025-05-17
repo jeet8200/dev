@@ -1,6 +1,8 @@
+```bash
 curl -O https://raw.githubusercontent.com/jeet8200/dev/main/autostartup.sh &&
 chmod +x autostartup.sh &&
 bash autostartup.sh;
+```
 
 -------------------------------------
  1) update_system ;;
