@@ -503,20 +503,20 @@ saved_domain=$(cat "$d_f" 2>/dev/null)
 install() {
     # Check if NGINX is already installed
 	if [ -d "/etc/letsencrypt/live/$saved_domain" ]; then
-	    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
 		echo -e "${cyan}N R P${green} is already installed.${rest}"
-		echo -e "${yellow}×××××××××××××××××××××××${rest}"
+		echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
 	else
 	# Ask the user for the domain name
-	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
 	read -p "Enter your domain name: " domain
-	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
 	read -p "Enter GRPC Path (Service Name) [default: grpc]: " grpc_path
 	grpc_path=${grpc_path:-grpc}
-	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
 	read -p "Enter WebSocket Path (Service Name) [default: ws]: " ws_path
 	ws_path=${ws_path:-ws}
-	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
 	check_dependencies
 	
 	echo "$domain" > "$d_f"
@@ -539,7 +539,7 @@ install() {
 	sudo ufw allow 443/tcp || display_error "Failed to allow port 443"
 	
 	# Get a free SSL certificate
-	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
 	echo -e "${green}Get SSL certificate ${rest}"
 	sudo certbot --nginx -d "$domain" --register-unsafely-without-email --non-interactive --agree-tos --redirect || display_error "Failed to obtain SSL certificate"
 	
@@ -614,9 +614,9 @@ EOL
 # Check installation statu
 check_status() {
 	if systemctl is-active --quiet nginx && [ -f "/etc/nginx/sites-available/$saved_domain" ] > /dev/null 2>&1; then
-	  echo -e "${green} 🌐 Service Installed.${rest}"
+	  echo -e "${green} ðŸŒ Service Installed.${rest}"
 	else
-	  echo -e "${red}🌐Service Not installed${rest}"
+	  echo -e "${red}ðŸŒService Not installed${rest}"
 	fi
 }
 
@@ -626,17 +626,17 @@ check_installation() {
     (crontab -l 2>/dev/null | grep -v 'certbot renew --nginx --force-renewal --non-interactive --post-hook "nginx -s reload"' ; echo '0 0 1 * * certbot renew --nginx --force-renewal --non-interactive --post-hook "nginx -s reload" > /dev/null 2>&1;') | crontab -
     echo ""
     echo -e "${purple}Certificate and Key saved at:${rest}"
-    echo -e "${yellow}×××××××××××××××××××××××××××××××××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
     echo -e "${cyan}/etc/letsencrypt/live/$domain/fullchain.pem${rest}"
     echo -e "${cyan}/etc/letsencrypt/live/$domain/privkey.pem${rest}"
-    echo -e "${yellow}×××××××××××××××××××××××××××××××××××××××××××××××××××××${rest}"
-    echo -e "${cyan}🌟 N R P installed Successfully.🌟${rest}"
-    echo -e "${yellow}××××××××××××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
+    echo -e "${cyan}ðŸŒŸ N R P installed Successfully.ðŸŒŸ${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
   else
     echo ""
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
-    echo -e "${red}❌N R P installation failed.❌${rest}"
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
+    echo -e "${red}âŒN R P installation failed.âŒ${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
   fi
 }
 
@@ -644,13 +644,13 @@ check_installation() {
 change_path() {
   if systemctl is-active --quiet nginx && [ -f "/etc/nginx/sites-available/$saved_domain" ]; then
      
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
     read -p "Enter the new GRPC path (Service Name) [default: grpc]: " new_grpc_path
     new_grpc_path=${new_grpc_path:-grpc}
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
     read -p "Enter the new WebSocket path (Service Name) [default: ws]: " new_ws_path
     new_ws_path=${new_ws_path:-ws}
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
     
     sed -i "14s|location ~ .* {$|location ~ ^/${new_grpc_path}/(?<port>\\\d+)/(.*)$ {|" /etc/nginx/sites-available/$saved_domain
     sed -i "28s|location ~ .* {$|location ~ ^/${new_ws_path}/(?<port>\\\d+)$ {|" /etc/nginx/sites-available/$saved_domain
@@ -662,31 +662,31 @@ change_path() {
 | GRPC Path       | ${yellow}$new_grpc_path
 ${cyan}| WebSocket Path  | ${yellow}$new_ws_path  ${cyan}
 |-----------------|-------|${rest}"
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
   else
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
     echo -e "${red}N R P is not installed.${rest}"
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
   fi
 }
 
 # Install random site
 install_random_fake_site() {
     if [ ! -d "/etc/letsencrypt/live/$saved_domain" ]; then
-        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
         echo -e "${red}Nginx is not installed.${rest}"
-        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
         exit 1
     fi
 
     if [ ! -d "/var/www/html" ]; then
-        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
         echo -e "${red}/var/www/html does not exist.${rest}"
         exit 1
     fi
 
     if [ ! -d "/var/www/website-templates" ]; then
-        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
         echo -e "${yellow}Downloading Websites list...${rest}"
         sudo git clone https://github.com/learning-zone/website-templates.git /var/www/website-templates
     fi
@@ -695,9 +695,9 @@ install_random_fake_site() {
     sudo rm -rf /var/www/html/*
     random_folder=$(ls -d */ | shuf -n 1)
     sudo mv "$random_folder"/* /var/www/html
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
     echo -e "${green}Website Installed Successfully${rest}"
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
 }
 #managing menu
 # Function to manage menu items (add/remove)
@@ -722,9 +722,9 @@ manage_menu_items() {
 add_limit() {
     # Check if NGINX service is installed
     if [ ! -d "/etc/letsencrypt/live/$saved_domain" ]; then
-        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
         echo -e "${red}N R P is not installed.${rest}"
-        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
         exit 1
     fi
     
@@ -737,17 +737,17 @@ total_usage(){
     echo -e "${cyan}T${yellow}o${cyan}t${yellow}a${cyan}l${yellow} U${cyan}s${yellow}a${cyan}g${yellow}e${cyan}: ${purple}[$total_mb] ${cyan}MB${rest}"
 }
 
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
     echo -e "${yellow}* ${cyan}This option adds a traffic limit to monitor increases in traffic compared to the last 24 hours.${yellow}*${rest}"
     echo ""
     echo -e "${yellow}* ${cyan}If the traffic exceeds this limit, the nginx service will be stopped.${yellow}*${rest}"
     echo ""
     total_usage
     echo -e "${yellow}* ${cyan}[${yellow}Note${cyan}]: ${cyan}After restarting the server, the ${cyan}T${yellow}o${cyan}t${yellow}a${cyan}l${yellow} U${cyan}s${yellow}a${cyan}g${yellow}e${cyan} will also be reset.${yellow}*${rest}"
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
     read -p "Enter the percentage limit [default: 50]: " percentage_limit
     percentage_limit=${percentage_limit:-50}
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
 
     if [ ! -d "/root/usage" ]; then
         mkdir -p /root/usage
@@ -806,12 +806,12 @@ chmod +x /root/usage/limit.sh && /root/usage/limit.sh
 change_port() {
     if [ -f "/etc/nginx/sites-available/$saved_domain" ]; then
         current_port=$(grep -oP "listen \[::\]:\K\d+" "/etc/nginx/sites-available/$saved_domain" | head -1)
-        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
         echo -e "${cyan}Current HTTPS port: ${purple}$current_port${rest}"
-        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
         read -p "Enter the new HTTPS port [default: 443]: " new_port
         new_port=${new_port:-443}
-        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
 
         # Change the port in NGINX configuration file
         sed -i "s/listen \[::\]:$current_port ssl http2 ipv6only=on;/listen [::]:$new_port ssl http2 ipv6only=on;/g" "/etc/nginx/sites-available/$saved_domain"
@@ -822,15 +822,15 @@ change_port() {
 
         # Check if NGINX restarted successfully
         if systemctl is-active --quiet nginx; then
-            echo -e "${green}✅ HTTPS port changed successfully to ${purple}$new_port${rest}"
+            echo -e "${green}âœ… HTTPS port changed successfully to ${purple}$new_port${rest}"
         else
-            echo -e "${red}❌ Error: NGINX failed to restart.${rest}"
+            echo -e "${red}âŒ Error: NGINX failed to restart.${rest}"
         fi
-        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
     else
-        echo -e "${yellow}×××××××××××××××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
         echo -e "${red}N R P is not installed.${rest}"
-        echo -e "${yellow}×××××××××××××××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
     fi
 }
 
@@ -988,11 +988,11 @@ fi
 uninstall() {
   # Check if NGINX is installed
   if [ ! -d "/etc/letsencrypt/live/$saved_domain" ]; then
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
     echo -e "${red}N R P is not installed.${rest}"
-    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
   else
-      echo -e "${green}☑️Uninstalling... ${rest}"
+      echo -e "${green}â˜‘ï¸Uninstalling... ${rest}"
 	  # Remove SSL certificate files
 	  rm -rf /etc/letsencrypt > /dev/null 2>&1
 	  rm -rf /var/www/html/* > /dev/null 2>&1
@@ -1004,9 +1004,9 @@ uninstall() {
 	  # Restart NGINX service
 	  systemctl restart nginx
 	   
-	  echo -e "${yellow}××××××××××××××××××××××××××××××${rest}"
+	  echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
 	  echo -e "${green}N R P uninstalled successfully.${rest}"
-	  echo -e "${yellow}××××××××××××××××××××××××××××××${rest}"
+	  echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
   fi
 }
 
@@ -1052,13 +1052,13 @@ case "$choice" in
         uninstall
         ;;
     0)
-        echo -e "${cyan}By 🖐${rest}"
+        echo -e "${cyan}By ðŸ–${rest}"
         exit
         ;;
     *)
-        echo -e "${yellow}××××××××××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
         echo "Invalid choice. Please select a valid option."
-        echo -e "${yellow}××××××××××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—Ã—${rest}"
         ;;
 esac
 
@@ -1085,10 +1085,10 @@ main_menu() {
         echo -e " ${YELLOW}16.${NC} Nginx reverse proxy setup with path for x-ui v2ray configs TESTING....."
         echo -e " ${YELLOW}17.${NC} Random"random_template_site..."
         echo -e " ${YELLOW}18.${NC} Tor Installation "
-	echo -e " ${YELLOW}17.${NC} Manage Functions"
+        echo -e " ${YELLOW}17.${NC} Manage Functions"
         echo -e " ${YELLOW}0.${NC} Exit"
         echo -e "${LGREEN}=====================${NC}"
-        read -p "Enter your choice: " main_choice
+        read -p "Enter your choice: " main_choice "
         case $main_choice in
             1) update_system ;;
             2) install_utilities ;;
@@ -1107,11 +1107,10 @@ main_menu() {
             15) uninstall_nginx ;;
             16) random_template_site ;;
             17) tor_menu ;;
-
-	    16) nginx_reverseProxy;;
+            16) nginx_reverseProxy;;
 	    17) manage_functions;;  # This is the new function
-             0) exit 0 ;;
-            *) handle_error "Invalid choice. Please enter a number between 0 and 16." ;;
+             *) handle_error "Invalid choice. Please enter a number between 0 and 17." ;;   
+             0) exit 0 ;;      
         esac
     done
 }
