@@ -1,31 +1,32 @@
-==== MTProto Proxy Whitelist Installer ====
+                                                  ## Quick Start
+curl -O https://raw.githubusercontent.com/jeet8200/dev/main/autostartup.sh && chmod +x autostartup.sh && bash autostartup.sh &&
 
-1) Install MTProto Proxy only (choose installation method)
+                                                  # Ultimate Server Manager
 
-2) Install Whitelist System (NGINX, PHP, firewall, Fail2Ban)
+                                   🔧 All-in-one Bash script for Linux server management
 
-3) Generate access URL with tokens
+## Features
+            1) update_system 
+            2) install_utilities 
+            3) install_nginx 
+            4) manage_nginx 
+            5) configure_nginx_wildcard_ssl 
+            6) install_x_ui 
+            7) handle_reality_ez 
+            8) install_hiddify_panel 
+            9) install_telegram_proxy 
+            10) install_openvpn 
+            11) install_fail2ban 
+            12) create_swap 
+            13) change_ssh_port 
+            14) schedule_reboot 
+            15) uninstall_nginx 
+            16) random_template_site 
+            17) tor_menu +3x-ui binding 
+            18) nginx_reverseProxy 
+            19) manage_functions 
 
-4) Fix permissions
 
-5) Change Whitelist Password
 
-6) Check system status
-
-7) Uninstall everything (full wipe)
-
-8) Send whitelist link via Telegram
-
-9) Random Fake HTML Page Generator
-
-M) Manage Telegram Users
-
-A) Clean Old Whitelisted IPs
-
-C) Manage Cloudflare Wildcard SSL Certificates
-
-T) Tor Installation
-
-0) Exit
 
 ===========================================
