@@ -1082,10 +1082,10 @@ main_menu() {
         echo -e " ${YELLOW}13.${NC} Change SSH port"
         echo -e " ${YELLOW}14.${NC} Schedule system reboot every 2 days"
         echo -e " ${YELLOW}15.${NC} Uninstall Nginx"
-        echo -e " ${YELLOW}16.${NC} Nginx reverse proxy setup with path for x-ui v2ray configs TESTING....."
-        echo -e " ${YELLOW}17.${NC} Random"random_template_site..."
-        echo -e " ${YELLOW}18.${NC} Tor Installation "
-        echo -e " ${YELLOW}17.${NC} Manage Functions"
+	echo -e " ${YELLOW}16.${NC} Random"random_template_site..."
+        echo -e " ${YELLOW}17.${NC} Tor Installation "
+        echo -e " ${YELLOW}18.${NC} Nginx reverse proxy setup with path for x-ui v2ray configs TESTING....."
+        echo -e " ${YELLOW}19.${NC} Manage Functions"
         echo -e " ${YELLOW}0.${NC} Exit"
         echo -e "${LGREEN}=====================${NC}"
         read -p "Enter your choice: " main_choice "
@@ -1107,8 +1107,8 @@ main_menu() {
             15) uninstall_nginx ;;
             16) random_template_site ;;
             17) tor_menu ;;
-            16) nginx_reverseProxy;;
-	    17) manage_functions;;  # This is the new function
+            18) nginx_reverseProxy;;
+	    19) manage_functions;;  # This is the new function
              *) handle_error "Invalid choice. Please enter a number between 0 and 17." ;;   
              0) exit 0 ;;      
         esac
