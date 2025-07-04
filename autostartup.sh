@@ -1,1426 +1,839 @@
 #!/bin/bash
 
-# ==============================================
-# MTProto Proxy Whitelist Installer
-# Enhanced Version with Security, Error Handling,
-# Performance Optimizations, Timestamped Whitelist,
-# NGINX Proxy Protocol Support, Automated Cleanup,
-# and Telegram User Management (using long Telegram links)
-# ==============================================
-
-# Exit immediately if a command exits with a non-zero status.
-# Treat unset variables as an error.
-# The return value of a pipeline is the value of the last (rightmost) command to exit with a non-zero status, or zero if all commands in the pipeline exit successfully.
-set -euo pipefail
-
-# Configuration
-CONFIG_FILE="/etc/mtproxy-whitelist.conf"
-LOG_FILE="/var/log/mtproxy-whitelist.log"
-NGINX_CONF_DIR="/etc/nginx"
-WHITE_LIST_FILE="$NGINX_CONF_DIR/whitelist.txt"
-PASSWORD_FILE="$NGINX_CONF_DIR/.password"
-USED_TOKENS_FILE="$NGINX_CONF_DIR/used_tokens.txt" # Used for one-time tokens
-WEB_DIR="/var/www/html"
-NGINX_STREAM_CONF="$NGINX_CONF_DIR/nginx.conf"
-NGINX_SITES_DIR="$NGINX_CONF_DIR/sites-available"
-NGINX_SITES_LINK="$NGINX_CONF_DIR/sites-enabled/whitelist_gateway"
-WHITELIST_SITE_CONF="$NGINX_SITES_DIR/whitelist_gateway"
-STREAM_CONF_FILE="$NGINX_CONF_DIR/stream.d/mtproto.conf"
-BACKUP_DIR="/var/backups/mtproxy-whitelist"
-TELEGRAM_USERS_FILE="$NGINX_CONF_DIR/telegram_users.txt" # File to store Telegram users (username:chat_id:proxy_address)
-TELEGRAM_BOT_TOKEN_FILE="$NGINX_CONF_DIR/mtproxy-whitelist.conf.telegram_token" # File to store Telegram Bot Token
-
-# Colors
+# Define text colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m' # Add this line
+YELLOW='\033[0;33m'
+LGREEN='\033[1;32m' # Light Green
 NC='\033[0m' # No Color
 
-# Initialize variables
-DOMAIN=""
-PROXY_PORT=""
-NGINX_PORT=""
-PHP_VERSION=""
-TELEGRAM_BOT_TOKEN="" # Variable to hold the loaded token
+# Function to handle errors
+handle_error() {
+    echo -e "${RED}Error: $1${NC}" >&2
+    exit 1
+}
+###
+#adding or removing functions to/from the list 
 
-# ==============================================
-# HELPER FUNCTIONS
-# ==============================================
-
-# Logging function
-log() {
-  echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+# Function to list all available functions in this script
+list_functions() {
+    echo "Available functions:"
+    grep -E '^[a-zA-Z0-9_]+\(\)' "$0" | awk -F '(' '{print NR ") " $1}'
 }
 
-# Error handling function
-error_exit() {
-  log "${RED}ERROR: $1${NC}"
+# Function to add a new function to this script
+add_function() {
+    read -p "Enter the function name to add: " func_name
+
+    # Check if function already exists
+    if grep -q "^$func_name()" "$0"; then
+        echo "Function '$func_name' already exists!"
+        return
+    fi
+
+    echo "Enter the function code (end with an empty line):"
+    func_code=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && break
+        func_code+="$line"$'\n'
+    done
+
+    # Append the function to the script
+    echo -e "\n$func_name() {\n$func_code\n}" >> "$0"
+    echo "Function '$func_name' added successfully!"
+
+    # Make sure the script remains executable
+    chmod +x "$0"
+}
+
+# Function to remove an existing function
+remove_function() {
+    list_functions
+    read -p "Enter the function name to remove: " func_name
+
+    # Check if function exists
+    if ! grep -q "^$func_name()" "$0"; then
+        echo "Function '$func_name' does not exist!"
+        return
+    fi
+
+    # Remove the function
+    sed -i "/^$func_name()/,/^}/d" "$0"
+    echo "Function '$func_name' removed successfully!"
+}
+
+# Function to manage menu items (add/remove functions)
+manage_functions() {
+    while true; do
+        echo -e "\nManage Functions Menu:"
+        echo "1) List functions"
+        echo "2) Add function"
+        echo "3) Remove function"
+        echo "4) Back to main menu"
+        read -p "Choose an option: " choice
+
+        case $choice in
+            1) list_functions ;;
+            2) add_function ;;
+            3) remove_function ;;
+            4) break ;;
+            *) echo "Invalid choice! Please try again." ;;
+        esac
+    done
+}
+
+
+# Function to update the package lists, upgrade installed packages, and clean up
+update_system() {
+    if sudo apt update -y && sudo apt upgrade -y && sudo apt autoclean -y && sudo apt autoremove -y ; then
+        echo -e "${GREEN}System update completed successfully.${NC}"
+    else
+        handle_error "Failed to update system."
+    fi
+}
+
+# Function to install sudo and wget
+install_utilities() {
+    if sudo apt install && sudo apt install ufw -y sudo wget apt-get install -y  ; then
+        echo -e "${GREEN}Utilities (sudo and wget and ufw ) installed successfully.${NC}"
+    else
+        handle_error "Failed to install utilities (sudo and wget)."
+    fi
+}
+
+# Function to install Nginx and obtain SSL certificates
+install_nginx() {
+    if sudo apt install nginx -y && sudo apt install snapd -y && sudo snap install core && sudo snap install --classic certbot && sudo ln -s /snap/bin/certbot /usr/bin/certbot && sudo certbot --nginx; then
+        echo -e "${GREEN}Nginx installed and SSL certificates obtained successfully.${NC}"
+    else
+        handle_error "Failed to install Nginx or obtain SSL certificates."
+    fi
+}
+
+# Function to manage Nginx: stop, start, reload, restart
+# Define the function to handle adding a new domain
+add_new_domain() {
+    echo -e "${LGREEN}===== Add New Domain =====${NC}"
+    read -p "Enter the domain name (e.g., example.com): " domain_name
+    if [ -z "$domain_name" ]; then
+        handle_error "Domain name cannot be empty. Please try again."
+    else
+        sudo cp /etc/nginx/sites-available/default /etc/nginx/sites-available/$domain_name
+        sudo ln -s /etc/nginx/sites-available/$domain_name /etc/nginx/sites-enabled/
+        echo -e "${GREEN}Domain $domain_name has been added and enabled.${NC}"
+        echo -e "Remember to configure the server block in /etc/nginx/sites-available/$domain_name and reload Nginx."
+    fi
+}
+
+manage_nginx() {
+    echo -e "${LGREEN}===== Nginx Management =====${NC}"
+    echo -e " ${YELLOW}1.${NC} Stop Nginx"
+    echo -e " ${YELLOW}2.${NC} Start Nginx"
+    echo -e " ${YELLOW}3.${NC} Reload Nginx"
+    echo -e " ${YELLOW}4.${NC} Restart Nginx"
+    echo -e " ${YELLOW}5.${NC} Uninstall Nginx"
+    echo -e " ${YELLOW}6.${NC} Add New Domain"  # New option for adding a domain
+    echo -e " ${YELLOW}0.${NC} Back"
+    echo -e "${LGREEN}============================${NC}"
+    read -p "Enter your choice: " nginx_choice
+    case $nginx_choice in
+        1) sudo systemctl stop nginx ;;
+        2) sudo systemctl start nginx ;;
+        3) sudo systemctl reload nginx ;;
+        4) sudo systemctl restart nginx ;;
+        5) uninstall_nginx ;;
+        6) add_new_domain ;;  # Calls the function for adding a new domain
+        0) return ;;
+        *) handle_error "Invalid choice. Please enter a number between 0 and 6." ;;
+    esac
+    echo -e "${GREEN}Nginx action completed successfully.${NC}"
+}
+
+
+# Function to configure Nginx for wildcard SSL
+configure_nginx_wildcard_ssl() {
+    read -p "Enter your domain name (e.g., example.com): " domain_name
+    
+    # Validate the domain name input
+    if [[ ! "$domain_name" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+        handle_error "Invalid domain name. Please enter a valid domain."
+        return 1
+    fi
+
+    # Choose the DNS provider
+    echo "Choose your DNS provider:"
+    echo "1) Cloudflare"
+    echo "2) Gcore"
+    read -p "Enter the number corresponding to your DNS provider: " dns_provider_choice
+
+    case $dns_provider_choice in
+        1)
+            dns_plugin="dns-cloudflare"
+            read -p "Enter your Cloudflare email: " cloudflare_email
+            read -p "Enter your Cloudflare API key: " cloudflare_api_key
+            echo
+
+            # Save the Cloudflare API credentials
+            cloudflare_credentials_file=~/.secrets/certbot/cloudflare.ini
+            mkdir -p $(dirname "$cloudflare_credentials_file")
+            echo "dns_cloudflare_email = $cloudflare_email" | sudo tee "$cloudflare_credentials_file" > /dev/null
+            echo "dns_cloudflare_api_key = $cloudflare_api_key" | sudo tee -a "$cloudflare_credentials_file" > /dev/null
+
+            # Secure the credentials file
+            sudo chmod 600 "$cloudflare_credentials_file"
+            ;;
+        2)
+            dns_plugin="dns-gcore"
+            read -p "Enter your Gcore API token: " gcore_api_token
+            echo
+
+            # Save the Gcore API credentials
+            gcore_credentials_file=~/.secrets/certbot/gcore.ini
+            mkdir -p $(dirname "$gcore_credentials_file")
+            echo "dns_gcore_api_token = $gcore_api_token" | sudo tee "$gcore_credentials_file" > /dev/null
+
+            # Secure the credentials file
+            sudo chmod 600 "$gcore_credentials_file"
+            ;;
+        *)
+            handle_error "Invalid choice. Please choose either 1 for Cloudflare or 2 for Gcore."
+            return 1
+            ;;
+    esac
+
+    # Certbot command with the chosen DNS challenge plugin
+    if sudo certbot certonly --$dns_plugin \
+            -d "$domain_name" \
+            -d "*.$domain_name" \
+            --agree-tos --non-interactive --email your-email@example.com; then
+        echo -e "${GREEN}Wildcard SSL certificate obtained successfully for $domain_name.${NC}"
+
+        # Configure Nginx to use the obtained certificate
+        nginx_config_file="/etc/nginx/sites-available/$domain_name.conf"
+        if sudo tee "$nginx_config_file" > /dev/null <<EOL
+server {
+    listen 443 ssl;
+    server_name $domain_name *.$domain_name;
+
+    ssl_certificate /etc/letsencrypt/live/$domain_name/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$domain_name/privkey.pem;
+
+    location / {
+        proxy_pass http://localhost:8080; # Adjust according to your setup
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOL
+        then
+            echo -e "${GREEN}Nginx configuration updated successfully for $domain_name.${NC}"
+            sudo ln -s "$nginx_config_file" /etc/nginx/sites-enabled/
+            sudo systemctl reload nginx
+        else
+            handle_error "Failed to configure Nginx for $domain_name."
+            return 1
+        fi
+    else
+        handle_error "Failed to obtain wildcard SSL certificate for $domain_name."
+        return 1
+    fi
+
+    # Optional: Log the successful SSL configuration
+    log_file="/var/log/nginx_ssl_setup.log"
+    echo "$(date): Successfully configured wildcard SSL for $domain_name using $dns_plugin" | sudo tee -a "$log_file"
+}
+
+# Function to install x-ui
+install_x_ui() {
+    if bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh); then
+        echo -e "${GREEN}x-ui installed successfully.${NC}"
+    else
+        handle_error "Failed to install x-ui."
+    fi
+}
+
+# Function to handle Reality-EZ menu
+handle_reality_ez() {
+    echo -e "${LGREEN}===== Reality-EZ Management =====${NC}"
+    echo -e " ${YELLOW}1.${NC} Installation"
+    echo -e " ${YELLOW}2.${NC} Manager"
+    echo -e " ${YELLOW}3.${NC} Show User Config by Username"
+    echo -e " ${YELLOW}4.${NC} Restart"
+    echo -e " ${YELLOW}0.${NC} Back"
+    echo -e "${LGREEN}==============================${NC}"
+    read -p "Enter your choice: " reality_ez_choice
+    case $reality_ez_choice in
+        1) bash <(curl -sL https://bit.ly/realityez) ;;
+        2) bash <(curl -sL https://bit.ly/realityez) -m ;;
+        3) read -p "Enter the username: " username; bash <(curl -sL https://bit.ly/realityez) --show-user "$username" ;;
+        4) bash <(curl -sL https://bit.ly/realityez) -r ;;
+        0) return ;;
+        *) handle_error "Invalid choice. Please enter a number between 0 and 4." ;;
+    esac
+    echo -e "${GREEN}Reality-EZ action completed successfully.${NC}"
+}
+
+# Function to install Telegram MTProto proxy
+install_telegram_proxy() {
+    if curl -L -o mtp_install.sh https://git.io/fj5ru && bash mtp_install.sh; then
+        echo -e "${GREEN}Telegram MTProto proxy installed successfully.${NC}"
+    else
+        handle_error "Failed to install Telegram MTProto proxy."
+    fi
+}
+
+# Function to install OpenVPN and stunnel
+install_openvpn() {
+    if sudo apt install openvpn stunnel4 -y; then
+        echo -e "${GREEN}OpenVPN and stunnel installed successfully.${NC}"
+    else
+        handle_error "Failed to install OpenVPN and stunnel."
+    fi
+}
+
+# Function to install fail2ban
+install_fail2ban() {
+    if sudo apt install fail2ban -y; then
+        echo -e "${GREEN}fail2ban installed successfully.${NC}"
+    else
+        handle_error "Failed to install fail2ban."
+    fi
+}
+
+# Function to create a swap file
+create_swap() {
+    echo -e "${LGREEN}===== Create Swap File =====${NC}"
+    echo -e " ${YELLOW}1.${NC} 512M"
+    echo -e " ${YELLOW}2.${NC} 1G"
+    echo -e " ${YELLOW}3.${NC} 2G"
+    read -p "Enter your choice: " swap_size
+    case $swap_size in
+        1) swap_size="512M" ;;
+        2) swap_size="1G" ;;
+        3) swap_size="2G" ;;
+        *) handle_error "Invalid choice. Please select 1, 2, or 3." ;;
+    esac
+    
+    case $swap_size in
+        512M)
+            if sudo fallocate -l 512M /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab; then
+                echo -e "${GREEN}Swap file created successfully.${NC}"
+            else
+                handle_error "Failed to create swap file."
+            fi
+            ;;
+        1G)
+            if sudo fallocate -l 1G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab; then
+                echo -e "${GREEN}Swap file created successfully.${NC}"
+            else
+                handle_error "Failed to create swap file."
+            fi
+            ;;
+        2G)
+            if sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab; then
+                echo -e "${GREEN}Swap file created successfully.${NC}"
+            else
+                handle_error "Failed to create swap file."
+            fi
+            ;;
+        *)
+            handle_error "Invalid swap size. Choose 512M, 1G, or 2G."
+            ;;
+    esac
+}
+# Function to change SSH port
+change_ssh_port() {
+    # Suggested ports - Commonly recommended alternatives to port 22
+    suggested_ports=("2022" "2222" "2200" "8022" "9222")
+    
+    echo "Please select a new SSH port from the suggested options below:"
+    for i in "${!suggested_ports[@]}"; do
+        echo "$((i + 1))) ${suggested_ports[$i]}"
+    done
+    
+    read -p "Enter the number corresponding to your choice (1-5) or enter a custom port: " port_choice
+
+    if [[ $port_choice =~ ^[1-5]$ ]]; then
+        new_ssh_port=${suggested_ports[$((port_choice - 1))]}
+    elif [[ $port_choice =~ ^[0-9]+$ && $port_choice -ge 1024 && $port_choice -le 65535 ]]; then
+        new_ssh_port=$port_choice
+    else
+        handle_error "Invalid choice. Please enter a valid port number."
+        return 1
+    fi
+
+    # Change the SSH port in the sshd_config file
+    if sudo sed -i "s/#Port 22/Port $new_ssh_port/g" /etc/ssh/sshd_config && sudo systemctl restart ssh; then
+        echo -e "${GREEN}SSH port changed successfully to $new_ssh_port.${NC}"
+    else
+        handle_error "Failed to change SSH port."
+        return 1
+    fi
+
+    # Ensure UFW is installed
+    if ! command -v ufw &> /dev/null; then
+        echo "UFW is not installed. Installing UFW..."
+        if sudo apt-get update && sudo apt-get install ufw -y; then
+            echo -e "${GREEN}UFW installed successfully.${NC}"
+        else
+            handle_error "Failed to install UFW."
+            return 1
+        fi
+    else
+        echo -e "${GREEN}UFW is already installed.${NC}"
+    fi
+
+    # Enable UFW if not already enabled
+    if sudo ufw status | grep -q "Status: inactive"; then
+        echo "UFW is not active. Enabling UFW..."
+        if sudo ufw enable; then
+            echo -e "${GREEN}UFW enabled successfully.${NC}"
+        else
+            handle_error "Failed to enable UFW."
+            return 1
+        fi
+    else
+        echo -e "${GREEN}UFW is already active.${NC}"
+    fi
+
+    # Add rate-limited rule for the new SSH port
+    echo "Adding UFW rule for SSH port $new_ssh_port with rate limiting..."
+    if sudo ufw limit "$new_ssh_port"/tcp; then
+        echo -e "${GREEN}UFW rule added successfully for port $new_ssh_port with rate limiting.${NC}"
+    else
+        handle_error "Failed to add UFW rule for SSH port $new_ssh_port."
+        return 1
+    fi
+}
+
+# Function to uninstall Nginx
+uninstall_nginx() {
+    if sudo apt remove --purge nginx -y && sudo rm -rf /etc/nginx; then
+        echo -e "${GREEN}Nginx uninstalled successfully.${NC}"
+    else
+        handle_error "Failed to uninstall Nginx."
+    fi
+}
+
+
+# Function to install Hiddify Panel
+install_hiddify_panel() {
+    if bash <(curl i.hiddify.com/release); then
+        echo -e "${GREEN}Hiddify Panel installed successfully.${NC}"
+    else
+        handle_error "Failed to install Hiddify Panel."
+    fi
+}
+# Function to add a cron job to reboot the system every 2 days
+schedule_reboot() {
+    if (crontab -l ; echo "0 0 */2 * * sudo /sbin/reboot") | crontab -; then
+        echo -e "${GREEN}Scheduled system reboot every 2 days.${NC}"
+    else
+        handle_error "Failed to schedule system reboot."
+    fi
+}
+nginx_reverseProxy(){
+#!/bin/bash
+
+#colors
+red='\033[0;31m'
+green='\033[0;32m'
+yellow='\033[0;33m'
+blue='\033[0;34m'
+purple='\033[0;35m'
+cyan='\033[0;36m'
+rest='\033[0m'
+
+# Check for root user
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run as root"
   exit 1
-}
+fi
 
-# Check if running as root
-check_root() {
-  if [[ $EUID -ne 0 ]]; then
-    error_exit "This script must be run as root. Please use sudo."
-  fi
-}
-
-# Validate port number
-validate_port() {
-  local port="$1"
-  if [[ ! "$port" =~ ^[0-9]+$ ]] || ((port < 1 || port > 65535)); then
-    error_exit "Invalid port number: $port. Must be between 1-65535."
-  fi
-}
-
-# Validate domain name
-validate_domain() {
-  local domain="$1"
-  if [[ -z "$domain" ]]; then
-    error_exit "Domain cannot be empty."
-  fi
-
-  # Simple domain validation regex
-  if ! [[ "$domain" =~ ^([a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]\.)+[a-zA-Z]{2,}$ ]]; then
-    error_exit "Invalid domain format: $domain"
-  fi
-}
-
-# Validate password strength
-validate_password() {
-  local password="$1"
-  if [[ ${#password} -lt 12 ]]; then
-    error_exit "Password must be at least 12 characters long."
-  fi
-}
-
-# Install ufw if missing
-install_ufw_if_missing() {
-    if ! command -v ufw >/dev/null 2>&1; then
-        echo "Installing ufw..."
-        apt install ufw -y || error_exit "Failed to install ufw"
-    fi
-}
-
-# Install unzip if missing
-install_unzip_if_missing() {
-    if ! command -v unzip >/dev/null 2>&1; then
-        echo "Installing unzip..."
-        apt install unzip -y || error_exit "Failed to install unzip"
-    fi
-}
-
-# Install dig (dnsutils) if missing
-install_dig_if_missing() {
-    if ! command -v dig >/dev/null 2>&1; then
-        echo "Installing dnsutils (for dig)..."
-        apt install dnsutils -y || error_exit "Failed to install dnsutils"
+# Detect the Linux distribution
+detect_distribution() {
+    
+    local supported_distributions=("ubuntu" "debian" "centos" "fedora")
+    
+    if [ -f /etc/os-release ]; then
+        source /etc/os-release
+        if [[ "${ID}" = "ubuntu" || "${ID}" = "debian" || "${ID}" = "centos" || "${ID}" = "fedora" ]]; then
+            p_m="apt-get"
+            [ "${ID}" = "centos" ] && p_m="yum"
+            [ "${ID}" = "fedora" ] && p_m="dnf"
+        else
+            echo "Unsupported distribution!"
+            exit 1
+        fi
+    else
+        echo "Unsupported distribution!"
+        exit 1
     fi
 }
 
 # Check dependencies
 check_dependencies() {
-  install_ufw_if_missing
-  install_unzip_if_missing
-  install_dig_if_missing
-  local dependencies=("curl" "openssl" "ufw" "systemctl" "shuf" "dig")
-  for dep in "${dependencies[@]}"; do
-    if ! command -v "$dep" >/dev/null 2>&1; then
-      error_exit "Missing required dependency: $dep"
-    fi
-  done
-}
-#wildcard cloudflare cert
-cloudflare_cert_menu() {
-    local BASE_DIR="$HOME/.cloudflare_certs"
-    local LIST_FILE="$BASE_DIR/cert_list.txt"
-    mkdir -p "$BASE_DIR"
-    touch "$LIST_FILE"
-
-    while true; do
-        echo ""
-        echo "=== Cloudflare Wildcard SSL Certificate Manager ==="
-        echo "1) Add new wildcard certificate"
-        echo "2) List managed domains"
-        echo "3) Delete a domain's certificate + credentials"
-        echo "4) Renew a domain's certificate"
-        echo "5) Back to main menu"
-        read -rp "Choose an option: " option
-
-        case "$option" in
-            1)
-                read -rp "Enter your wildcard domain (e.g. *.example.com): " wildcard_domain
-                domain=$(echo "$wildcard_domain" | sed 's/\*\.//')
-                cred_file="$BASE_DIR/cloudflare_${domain}.ini"
-
-                if grep -q "^$domain:" "$LIST_FILE"; then
-                    echo "âš ï¸ Domain $domain already exists."
-                    return
-                fi
-
-                echo "Choose authentication method:"
-                echo "1) Global API Key (requires email)"
-                echo "2) API Token (recommended)"
-                read -rp "Enter 1 or 2: " auth_choice
-
-                if [[ "$auth_choice" == "1" ]]; then
-                    read -rp "Enter your Cloudflare email: " cf_email
-                    read -rsp "Enter your Global API Key: " cf_key
-                    echo ""
-                    cat > "$cred_file" <<EOF
-dns_cloudflare_email = $cf_email
-dns_cloudflare_api_key = $cf_key
-EOF
-                    auth_type="api_key"
-                elif [[ "$auth_choice" == "2" ]]; then
-                    read -rsp "Enter your Cloudflare API Token: " cf_token
-                    echo ""
-                    cat > "$cred_file" <<EOF
-dns_cloudflare_api_token = $cf_token
-EOF
-                    auth_type="api_token"
-                else
-                    echo "Invalid choice."
-                    continue
-                fi
-
-                chmod 600 "$cred_file"
-                echo "Requesting certificate for $wildcard_domain and $domain..."
-                if sudo certbot certonly \
-                    --dns-cloudflare \
-                    --dns-cloudflare-credentials "$cred_file" \
-                    -d "$wildcard_domain" -d "$domain"; then
-                    echo "$domain:$auth_type:$cred_file" >> "$LIST_FILE"
-                    echo "âœ… Certificate issued successfully."
-                else
-                    echo "âŒ Certificate issuance failed."
-                fi
-                ;;
-            2)
-                echo "=== Managed Domains ==="
-                if [[ ! -s "$LIST_FILE" ]]; then
-                    echo "No domains found."
-                else
-                    nl -w2 -s'. ' "$LIST_FILE" | cut -d':' -f1
-                fi
-                ;;
-            3)
-                nl -w2 -s'. ' "$LIST_FILE" | cut -d':' -f1
-                read -rp "Enter the domain to delete (e.g. example.com): " domain
-                line=$(grep "^$domain:" "$LIST_FILE")
-                if [[ -z "$line" ]]; then
-                    echo "Domain not found."
-                else
-                    cred_file=$(echo "$line" | cut -d':' -f3)
-                    sudo certbot delete --cert-name "$domain"
-                    rm -f "$cred_file"
-                    sed -i "/^$domain:/d" "$LIST_FILE"
-                    echo "âœ… Deleted $domain and its associated files."
-                fi
-                ;;
-            4)
-                nl -w2 -s'. ' "$LIST_FILE" | cut -d':' -f1
-                read -rp "Enter the domain to renew (e.g. example.com): " domain
-                line=$(grep "^$domain:" "$LIST_FILE")
-                if [[ -z "$line" ]]; then
-                    echo "Domain not found."
-                else
-                    cred_file=$(echo "$line" | cut -d':' -f3)
-                    sudo certbot certonly \
-                        --dns-cloudflare \
-                        --dns-cloudflare-credentials "$cred_file" \
-                        -d "*.$domain" -d "$domain" || echo "âŒ Renewal failed for $domain."
-                fi
-                ;;
-            5) break ;;
-            *) echo "Invalid option." ;;
-        esac
+    detect_distribution
+    sudo "${p_m}" -y update && sudo "${p_m}" -y upgrade
+    local dependencies=("nginx" "git" "wget" "certbot" "ufw" "python3-certbot-nginx")
+    
+    for dep in "${dependencies[@]}"; do
+        if ! command -v "${dep}" &> /dev/null; then
+            echo -e "${yellow}${dep} is not installed. Installing...${rest}"
+            sudo "${p_m}" install "${dep}" -y
+        fi
     done
 }
 
-# Load configuration
-load_config() {
-  if [[ -f "$CONFIG_FILE" ]]; then
-    source "$CONFIG_FILE" || error_exit "Failed to load config file."
+# Display error and exit
+display_error() {
+  echo -e "${red}Error: $1${rest}"
+  exit 1
+}
+
+# Store domain name
+d_f="/etc/nginx/d.txt"
+# Read domain from file
+saved_domain=$(cat "$d_f" 2>/dev/null)
+
+
+# Install Reverse nginx
+install() {
+    # Check if NGINX is already installed
+	if [ -d "/etc/letsencrypt/live/$saved_domain" ]; then
+	    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+		echo -e "${cyan}N R P${green} is already installed.${rest}"
+		echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	else
+	# Ask the user for the domain name
+	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	read -p "Enter your domain name: " domain
+	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	read -p "Enter GRPC Path (Service Name) [default: grpc]: " grpc_path
+	grpc_path=${grpc_path:-grpc}
+	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	read -p "Enter WebSocket Path (Service Name) [default: ws]: " ws_path
+	ws_path=${ws_path:-ws}
+	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	check_dependencies
+	
+	echo "$domain" > "$d_f"
+	# Copy default NGINX config to your website
+	sudo cp /etc/nginx/sites-available/default "/etc/nginx/sites-available/$domain" || display_error "Failed to copy NGINX config"
+	
+	# Enable your website
+	sudo ln -s "/etc/nginx/sites-available/$domain" "/etc/nginx/sites-enabled/" || display_error "Failed to enable your website"
+	
+	# Remove default_server from the copied config
+	sudo sed -i -e 's/listen 80 default_server;/listen 80;/g' \
+	              -e 's/listen \[::\]:80 default_server;/listen \[::\]:80;/g' \
+	              -e "s/server_name _;/server_name $domain;/g" "/etc/nginx/sites-available/$domain" || display_error "Failed to modify NGINX config"
+	
+	# Restart NGINX service
+	sudo systemctl restart nginx || display_error "Failed to restart NGINX service"
+	
+	# Allow ports in firewall
+	sudo ufw allow 80/tcp || display_error "Failed to allow port 80"
+	sudo ufw allow 443/tcp || display_error "Failed to allow port 443"
+	
+	# Get a free SSL certificate
+	echo -e "${yellow}×××××××××××××××××××××××${rest}"
+	echo -e "${green}Get SSL certificate ${rest}"
+	sudo certbot --nginx -d "$domain" --register-unsafely-without-email --non-interactive --agree-tos --redirect || display_error "Failed to obtain SSL certificate"
+	
+	# NGINX config file content
+	cat <<EOL > /etc/nginx/sites-available/$domain
+server {
+        root /var/www/html;
+        
+        # Add index.php to the list if you are using PHP
+        index index.html index.htm index.nginx-debian.html;
+        server_name $domain;
+        
+        location / {
+                # First attempt to serve request as file, then
+                # as directory, then fall back to displaying a 404.
+                try_files \$uri \$uri/ =404;
+        }
+        # GRPC configuration
+	    location ~ ^/$grpc_path/(?<port>\d+)/(.*)$ {
+	        if (\$content_type !~ "application/grpc") {
+	            return 404;
+	        }
+	        set \$grpc_port \$port;
+	        client_max_body_size 0;
+	        client_body_buffer_size 512k;
+	        grpc_set_header X-Real-IP \$remote_addr;
+	        client_body_timeout 1w;
+	        grpc_read_timeout 1w;
+	        grpc_send_timeout 1w;
+	        grpc_pass grpc://127.0.0.1:\$grpc_port;
+	    }
+	    # WebSocket configuration
+	    location ~ ^/$ws_path/(?<port>\d+)$ {
+	        if (\$http_upgrade != "websocket") {
+	            return 404;
+	        }
+	        set \$ws_port \$port;
+	        proxy_pass http://127.0.0.1:\$ws_port/;
+	        proxy_redirect off;
+	        proxy_http_version 1.1;
+	        proxy_set_header Upgrade \$http_upgrade;
+	        proxy_set_header Connection "upgrade";
+	        proxy_set_header Host \$host;
+	        proxy_set_header X-Real-IP \$remote_addr;
+	        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+	    }
+	
+    listen [::]:443 ssl http2 ipv6only=on; # managed by Certbot
+    listen 443 ssl http2; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+}
+server {
+    if (\$host = $domain) {
+        return 301 https://\$host\$request_uri;
+    } # managed by Certbot
+        listen 80;
+        listen [::]:80;
+        server_name $domain;
+    return 404; # managed by Certbot
+}
+EOL
+	
+	# Restart NGINX service
+	sudo systemctl restart nginx || display_error "Failed to restart NGINX service"
+	check_installation
   fi
-  # Load Telegram Bot Token if file exists
-  if [[ -f "$TELEGRAM_BOT_TOKEN_FILE" ]] && [[ -s "$TELEGRAM_BOT_TOKEN_FILE" ]]; then
-      TELEGRAM_BOT_TOKEN=$(cat "$TELEGRAM_BOT_TOKEN_FILE") || error_exit "Failed to read Telegram bot token file."
-      log "Loaded existing Telegram bot token."
-  fi
 }
 
-# Save configuration
-save_config() {
-  mkdir -p "$(dirname "$CONFIG_FILE")"
-  cat > "$CONFIG_FILE" <<EOF
-# MTProxy Whitelist Configuration
-DOMAIN="$DOMAIN"
-PROXY_PORT="$PROXY_PORT"
-NGINX_PORT="$NGINX_PORT"
-EOF
-  chmod 600 "$CONFIG_FILE"
+# Check installation statu
+check_status() {
+	if systemctl is-active --quiet nginx && [ -f "/etc/nginx/sites-available/$saved_domain" ] > /dev/null 2>&1; then
+	  echo -e "${green} 🌐 Service Installed.${rest}"
+	else
+	  echo -e "${red}🌐Service Not installed${rest}"
+	fi
 }
 
-# Save Telegram Bot Token
-save_telegram_bot_token() {
-    local token="$1"
-    echo "$token" > "$TELEGRAM_BOT_TOKEN_FILE" || error_exit "Failed to save Telegram bot token."
-    chmod 600 "$TELEGRAM_BOT_TOKEN_FILE" || error_exit "Failed to set permissions for Telegram bot token file."
-    chown root:root "$TELEGRAM_BOT_TOKEN_FILE" || error_exit "Failed to set ownership for Telegram bot token file."
-    log "${GREEN}Telegram bot token saved securely.${NC}"
-}
-
-# Create backup
-create_backup() {
-  log "Creating backup of current configuration..."
-  mkdir -p "$BACKUP_DIR"
-  local timestamp=$(date +%Y%m%d-%H%M%S)
-  local backup_file="$BACKUP_DIR/config-$timestamp.tar.gz"
-
-  # Using || true to prevent script from exiting if some files are missing during backup
-  tar -czf "$backup_file" \
-    "$WHITE_LIST_FILE" \
-    "$PASSWORD_FILE" \
-    "$USED_TOKENS_FILE" \
-    "$NGINX_CONF_DIR" \
-    "$WEB_DIR/post.php" \
-    "$TELEGRAM_USERS_FILE" \
-    "$TELEGRAM_BOT_TOKEN_FILE" || true
-
-  if [[ $? -eq 0 ]]; then
-    log "Backup created: ${GREEN}$backup_file${NC}"
+# Function to check installation status
+check_installation() {
+  if systemctl is-active --quiet nginx && [ -f "/etc/nginx/sites-available/$domain" ]; then
+    (crontab -l 2>/dev/null | grep -v 'certbot renew --nginx --force-renewal --non-interactive --post-hook "nginx -s reload"' ; echo '0 0 1 * * certbot renew --nginx --force-renewal --non-interactive --post-hook "nginx -s reload" > /dev/null 2>&1;') | crontab -
+    echo ""
+    echo -e "${purple}Certificate and Key saved at:${rest}"
+    echo -e "${yellow}×××××××××××××××××××××××××××××××××××××××××××××××××××××${rest}"
+    echo -e "${cyan}/etc/letsencrypt/live/$domain/fullchain.pem${rest}"
+    echo -e "${cyan}/etc/letsencrypt/live/$domain/privkey.pem${rest}"
+    echo -e "${yellow}×××××××××××××××××××××××××××××××××××××××××××××××××××××${rest}"
+    echo -e "${cyan}🌟 N R P installed Successfully.🌟${rest}"
+    echo -e "${yellow}××××××××××××××××××××××××××××××××${rest}"
   else
-    log "${YELLOW}Warning: Backup creation failed or some files were missing.${NC}"
+    echo ""
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${red}❌N R P installation failed.❌${rest}"
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
   fi
 }
 
-# Check PHP version
-get_php_version() {
-  if command -v php >/dev/null 2>&1; then
-    PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+# Change Paths
+change_path() {
+  if systemctl is-active --quiet nginx && [ -f "/etc/nginx/sites-available/$saved_domain" ]; then
+     
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    read -p "Enter the new GRPC path (Service Name) [default: grpc]: " new_grpc_path
+    new_grpc_path=${new_grpc_path:-grpc}
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    read -p "Enter the new WebSocket path (Service Name) [default: ws]: " new_ws_path
+    new_ws_path=${new_ws_path:-ws}
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    
+    sed -i "14s|location ~ .* {$|location ~ ^/${new_grpc_path}/(?<port>\\\d+)/(.*)$ {|" /etc/nginx/sites-available/$saved_domain
+    sed -i "28s|location ~ .* {$|location ~ ^/${new_ws_path}/(?<port>\\\d+)$ {|" /etc/nginx/sites-available/$saved_domain
+    
+    # Restart Nginx
+    systemctl restart nginx
+    echo -e " ${purple}Paths Changed Successfully${cyan}:
+|-----------------|-------|
+| GRPC Path       | ${yellow}$new_grpc_path
+${cyan}| WebSocket Path  | ${yellow}$new_ws_path  ${cyan}
+|-----------------|-------|${rest}"
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
   else
-    PHP_VERSION=""
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${red}N R P is not installed.${rest}"
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
   fi
 }
 
-# Check if domain resolves to this server's public IP
-check_domain_resolution() {
-    local domain="$1"
-    log "Checking if domain '$domain' resolves to this server's IP..."
-
-    local public_ip=$(curl -s ifconfig.me)
-    if [[ -z "$public_ip" ]]; then
-        error_exit "Could not determine this server's public IP. Check internet connectivity."
+# Install random site
+install_random_fake_site() {
+    if [ ! -d "/etc/letsencrypt/live/$saved_domain" ]; then
+        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${red}Nginx is not installed.${rest}"
+        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        exit 1
     fi
 
-    local resolved_ip=$(dig +short "$domain" | head -n 1)
-    if [[ -z "$resolved_ip" ]]; then
-        error_exit "Domain '$domain' does not resolve to any IP. Please check your DNS settings."
+    if [ ! -d "/var/www/html" ]; then
+        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${red}/var/www/html does not exist.${rest}"
+        exit 1
     fi
 
-    if [[ "$public_ip" != "$resolved_ip" ]]; then
-        error_exit "Domain '$domain' resolves to '$resolved_ip', but this server's IP is '$public_ip'. Please update your DNS A record."
+    if [ ! -d "/var/www/website-templates" ]; then
+        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${yellow}Downloading Websites list...${rest}"
+        sudo git clone https://github.com/learning-zone/website-templates.git /var/www/website-templates
     fi
-    log "${GREEN}Domain '$domain' successfully resolves to this server's IP.${NC}"
+    
+    cd /var/www/website-templates
+    sudo rm -rf /var/www/html/*
+    random_folder=$(ls -d */ | shuf -n 1)
+    sudo mv "$random_folder"/* /var/www/html
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${green}Website Installed Successfully${rest}"
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+}
+#managing menu
+# Function to manage menu items (add/remove)
+manage_menu_items() {
+    echo "1) List functions"
+    echo "2) Add function"
+    echo "3) Remove function"
+    echo "4) Exit"
+    read -p "Choose an option: " choice
+
+    case $choice in
+        1) list_functions ;;
+        2) add_function ;;
+        3) remove_function ;;
+        4) return ;;
+        *) echo "Invalid choice!";;
+    esac
 }
 
-# Add Telegram user to file (updated to include proxy_address)
-add_telegram_user() {
-    local username="$1"
-    local chat_id="$2"
-    local proxy_address="${3:-}" # Optional proxy_address, default to empty
 
-    # Escape potential colons in username to prevent issues with IFS later
-    # This also handles the proxy address being the last field correctly.
-    local escaped_username=$(echo "$username" | sed 's/:/\\:/g')
-
-    # Check if user already exists based on escaped username and chat_id
-    if grep -q "^${escaped_username}:${chat_id}:" "$TELEGRAM_USERS_FILE" || \
-       grep -q "^${escaped_username}:${chat_id}$" "$TELEGRAM_USERS_FILE"; then # Also check old format without proxy
-        log "${YELLOW}Telegram user '${username}' with chat ID '${chat_id}' already exists. Updating entry.${NC}"
-        # Update existing entry by deleting and re-adding
-        # Use awk to find the line and replace, ensuring the new line is correctly formatted
-        # This is safer than sed -i /c\ for handling potential colons in old/new proxy address
-        awk -v old_user="${escaped_username}" -v old_chat="${chat_id}" -v new_line="${escaped_username}:${chat_id}:${proxy_address}" '
-            BEGIN { found = 0 }
-            $0 ~ "^" old_user ":" old_chat "(:|$)" {
-                print new_line
-                found = 1
-            }
-            !($0 ~ "^" old_user ":" old_chat "(:|$)") {
-                print $0
-            }
-            END { if (found == 0) print new_line } # Add if not found (edge case for initial adding)
-        ' "$TELEGRAM_USERS_FILE" > "${TELEGRAM_USERS_FILE}.tmp" && \
-        mv "${TELEGRAM_USERS_FILE}.tmp" "$TELEGRAM_USERS_FILE" || error_exit "Failed to update Telegram user"
-
-    else
-        echo "${escaped_username}:${chat_id}:${proxy_address}" >> "$TELEGRAM_USERS_FILE" || error_exit "Failed to save Telegram user"
+# Limitation
+add_limit() {
+    # Check if NGINX service is installed
+    if [ ! -d "/etc/letsencrypt/live/$saved_domain" ]; then
+        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${red}N R P is not installed.${rest}"
+        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        exit 1
     fi
-
-    chmod 600 "$TELEGRAM_USERS_FILE" || error_exit "Failed to set permissions for Telegram users file"
-    chown www-data:www-data "$TELEGRAM_USERS_FILE" || error_exit "Failed to set ownership for Telegram users file"
-    log "${GREEN}Telegram user '${username}' (ID: ${chat_id}) saved/updated.${NC}"
+    
+total_usage(){
+    interface=$(ip -o link show | awk -F': ' '{print $2}' | grep -v "lo" | head -n 1) > /dev/null 2>&1
+    data=$(grep "$interface:" /proc/net/dev)
+    download=$(echo "$data" | awk '{print $2}')
+    upload=$(echo "$data" | awk '{print $10}')
+    total_mb=$(echo "scale=2; ($download + $upload) / 1024 / 1024" | bc)
+    echo -e "${cyan}T${yellow}o${cyan}t${yellow}a${cyan}l${yellow} U${cyan}s${yellow}a${cyan}g${yellow}e${cyan}: ${purple}[$total_mb] ${cyan}MB${rest}"
 }
 
-# List Telegram users (updated to display proxy_address)
-list_telegram_users() {
-    if [[ ! -f "$TELEGRAM_USERS_FILE" ]] || [[ ! -s "$TELEGRAM_USERS_FILE" ]]; then
-        echo -e "${YELLOW}No saved Telegram users found.${NC}"
-        return 1
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${yellow}* ${cyan}This option adds a traffic limit to monitor increases in traffic compared to the last 24 hours.${yellow}*${rest}"
+    echo ""
+    echo -e "${yellow}* ${cyan}If the traffic exceeds this limit, the nginx service will be stopped.${yellow}*${rest}"
+    echo ""
+    total_usage
+    echo -e "${yellow}* ${cyan}[${yellow}Note${cyan}]: ${cyan}After restarting the server, the ${cyan}T${yellow}o${cyan}t${yellow}a${cyan}l${yellow} U${cyan}s${yellow}a${cyan}g${yellow}e${cyan} will also be reset.${yellow}*${rest}"
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    read -p "Enter the percentage limit [default: 50]: " percentage_limit
+    percentage_limit=${percentage_limit:-50}
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+
+    if [ ! -d "/root/usage" ]; then
+        mkdir -p /root/usage
     fi
+    
+    cat <<EOL > /root/usage/limit.sh
+#!/bin/bash
 
-    echo -e "\n${BLUE}Saved Telegram Users:${NC}"
-    local i=1
-    # Read line by line, then use cut to safely parse fields, especially the last one
-    while read -r line || [[ -n "$line" ]]; do
-        local username=$(echo "$line" | cut -d':' -f1)
-        local chat_id=$(echo "$line" | cut -d':' -f2)
-        local proxy_address=$(echo "$line" | cut -d':' -f3-) # Get everything from the 3rd field onwards
+# Define the interface
+interface=\$(ip -o link show | awk -F': ' '{print \$2}' | grep -v "lo" | head -n 1)
 
-        # Unescape username if it was escaped for display
-        local display_username=$(echo "$username" | sed 's/\\:/!COLON!/g' | sed 's/:/ /g' | sed 's/!COLON!/:/g')
-        local display_proxy=""
-        if [[ -n "$proxy_address" ]]; then
-            display_proxy=", Proxy: $proxy_address"
+# Current total traffic data
+get_total(){
+    data=\$(grep "\$interface:" /proc/net/dev)
+    download=\$(echo "\$data" | awk '{print \$2}')
+    upload=\$(echo "\$data" | awk '{print \$10}')
+    total_mb=\$(echo "scale=2; (\$download + \$upload) / 1024 / 1024" | bc)
+    echo "\$total_mb"
+}
+
+# Check traffic increase
+check_traffic_increase() {
+    current_total_mb=\$(get_total)
+
+    # Check if file exists
+    if [ -f "/root/usage/\${interface}_traffic.txt" ]; then
+        # Read the traffic data from file
+        read -r prev_total_mb < "/root/usage/\${interface}_traffic.txt"
+
+        # Calculate traffic increase percentage
+        increase=\$(echo "scale=2; (\$current_total_mb - \$prev_total_mb) / \$prev_total_mb * 100" | bc)
+        # Display message if traffic increase is greater than \$percentage_limit%
+        if (( \$(echo "\$increase > $percentage_limit" | bc) )); then
+            sudo systemctl stop nginx
+            echo "[$(date +'%Y-%m-%d %H:%M:%S')] Traffic on interface \$interface increased by more than $percentage_limit% compared to previous:" >> /root/usage/log.txt
         fi
-        echo -e "${GREEN}$i) Username: $display_username, Chat ID: $chat_id${display_proxy}${NC}"
-        ((i++))
-    done < "$TELEGRAM_USERS_FILE"
-    return 0
-}
-
-# Delete Telegram user
-delete_telegram_user() {
-    local user_num="$1"
-    if [[ ! -f "$TELEGRAM_USERS_FILE" ]] || [[ ! -s "$TELEGRAM_USERS_FILE" ]]; then
-        log "${YELLOW}No Telegram users to delete.${NC}"
-        return
     fi
 
-    local num_users=$(wc -l < "$TELEGRAM_USERS_FILE")
-    if (( user_num < 1 || user_num > num_users )); then
-        error_exit "Invalid user number: $user_num"
-    fi
-
-    local user_line=$(sed -n "${user_num}p" "$TELEGRAM_USERS_FILE")
-    local username=$(echo "$user_line" | cut -d':' -f1) # Safely get username
-
-    sed -i "${user_num}d" "$TELEGRAM_USERS_FILE" || error_exit "Failed to delete Telegram user."
-    chmod 600 "$TELEGRAM_USERS_FILE" || error_exit "Failed to set permissions for Telegram users file"
-    chown www-data:www-data "$TELEGRAM_USERS_FILE" || error_exit "Failed to set ownership for Telegram users file"
-    log "${GREEN}Telegram user '${username}' deleted successfully.${NC}"
+    # Save current traffic data to file
+    echo "\$current_total_mb" > "/root/usage/\${interface}_traffic.txt"
 }
 
-# Manage Telegram users menu
-manage_telegram_users_menu() {
-    while true; do
-        clear
-        echo -e "${BLUE}==== Manage Telegram Users ====${NC}"
-        list_telegram_users # List existing users
+check_traffic_increase
+EOL
 
-        echo -e "\n${GREEN}1) Add New Telegram User"
-        echo -e "2) Edit Existing Telegram User"
-        echo -e "3) Delete Telegram User"
-        echo -e "0) Back to Main Menu${NC}"
-        echo -e "==========================================="
+# Set execute permission for the created script
+chmod +x /root/usage/limit.sh && /root/usage/limit.sh
 
-        read -p "Choose an option: " choice
-        case $choice in
-            1)
-                read -p "Enter recipient's Telegram Chat ID: " CHAT_ID
-                read -p "Enter a username for this recipient (e.g., 'JohnDoe'): " USERNAME
-                read -p "Enter Telegram proxy link (optional, e.g., 'https://t.me/proxy?server=...'): " TELEGRAM_PROXY_LINK_TO_SAVE
-                add_telegram_user "$USERNAME" "$CHAT_ID" "$TELEGRAM_PROXY_LINK_TO_SAVE"
-                ;;
-            2)
-                if list_telegram_users; then
-                    read -p "Enter the number of the user to edit: " user_num
-                    local num_users=$(wc -l < "$TELEGRAM_USERS_FILE")
-                    if (( user_num < 1 || user_num > num_users )); then
-                        echo -e "${RED}Invalid user number.${NC}"
-                    else
-                        local current_line=$(sed -n "${user_num}p" "$TELEGRAM_USERS_FILE")
-                        # Use cut to safely parse the current line
-                        local current_username=$(echo "$current_line" | cut -d':' -f1)
-                        local current_chat_id=$(echo "$current_line" | cut -d':' -f2)
-                        local current_proxy_address=$(echo "$current_line" | cut -d':' -f3-) # Get full proxy link
-
-                        echo -e "${YELLOW}Editing user: $(echo "$current_username" | sed 's/\\:/!COLON!/g' | sed 's/:/ /g' | sed 's/!COLON!/:/g') (Chat ID: ${current_chat_id}, Proxy: ${current_proxy_address})${NC}"
-                        read -p "Enter new username (current: ${current_username}, press Enter to keep): " new_username
-                        new_username=${new_username:-$current_username}
-                        read -p "Enter new Chat ID (current: ${current_chat_id}, press Enter to keep): " new_chat_id
-                        new_chat_id=${new_chat_id:-$current_chat_id}
-                        read -p "Enter new Telegram proxy link (current: ${current_proxy_address}, press Enter to keep, or enter 'none' to clear): " new_proxy_link
-                        if [[ "$new_proxy_link" == "none" ]]; then
-                            new_proxy_link=""
-                        else
-                            new_proxy_link=${new_proxy_link:-$current_proxy_address}
-                        fi
-
-                        # Delete old entry and add new one
-                        delete_telegram_user "$user_num" # Temporarily delete to rewrite
-                        add_telegram_user "$new_username" "$new_chat_id" "$new_proxy_link"
-                        log "${GREEN}User '$(echo "$new_username" | sed 's/\\:/!COLON!/g' | sed 's/:/ /g' | sed 's/!COLON!/:/g')' updated successfully.${NC}"
-                    fi
-                fi
-                ;;
-            3)
-                if list_telegram_users; then
-                    read -p "Enter the number of the user to delete: " user_num
-                    delete_telegram_user "$user_num"
-                fi
-                ;;
-            0)
-                return
-                ;;
-            *)
-                echo -e "${RED}Invalid option. Please try again.${NC}"
-                ;;
-        esac
-        read -p "Press Enter to continue..."
-    done
+# Schedule the script to run every 24 hours using cron job
+(crontab -l 2>/dev/null | grep -v '/root/usage/limit.sh' ; echo '0 0 * * * /root/usage/limit.sh > /dev/null 2>&1;') | crontab -
 }
 
-
-# ==============================================
-# INSTALLATION FUNCTIONS
-# ==============================================
-
-# Setup UFW firewall rules
-setup_ufw_rules() {
-  log "Configuring UFW firewall rules..."
-
-  ufw --force reset || error_exit "Failed to reset UFW"
-  ufw default deny incoming || error_exit "Failed to set UFW defaults"
-  ufw default allow outgoing || error_exit "Failed to set UFW defaults"
-  ufw limit ssh || error_exit "Failed to configure SSH in UFW"
-  ufw allow http/tcp || error_exit "Failed to allow HTTP (port 80)"
-  ufw allow https/tcp || error_exit "Failed to allow HTTPS (port 443)"
-
-  if [[ -n "$NGINX_PORT" ]]; then
-    ufw allow "$NGINX_PORT"/tcp comment "NGINX Whitelist Gateway Port" || error_exit "Failed to allow NGINX whitelist port"
-  fi
-
-  if [[ -n "$PROXY_PORT" ]]; then
-    ufw allow "$PROXY_PORT"/tcp comment "MTProto Proxy Port" || error_exit "Failed to allow MTProto proxy port"
-  fi
-
-  ufw --force enable || error_exit "Failed to enable UFW"
-  log "${GREEN}Firewall configured successfully${NC}"
-}
-
-# Install MTProto Proxy
-install_mtproto_proxy() {
-  log "Installing MTProto Proxy..."
-
-  cd /opt || error_exit "Failed to change to /opt directory"
-
-  # Download with retry logic
-  local retries=3
-  local success=false
-
-  for ((i=1; i<=retries; i++)); do
-    log "Downloading MTProto Proxy installer (attempt $i/$retries)..."
-    if curl -o MTProtoProxyInstall.sh -L https://git.io/fjo34; then
-      success=true
-      break
-    fi
-    sleep 5
-  done
-
-  if [[ "$success" != true ]]; then
-    error_exit "Failed to download MTProtoProxyInstall.sh after $retries attempts"
-  fi
-
-  chmod +x MTProtoProxyInstall.sh || error_exit "Failed to make installer executable"
-  bash MTProtoProxyInstall.sh || error_exit "MTProto Proxy installation failed"
-
-  log "${GREEN}MTProto Proxy installed successfully${NC}"
-}
-
-# Install MTProto Proxy (Method 2 - alternative)
-install_mtproto_proxy_method2() {
-  log "Installing MTProto Proxy (Method 2)..."
-  cd /opt || error_exit "Failed to change to /opt directory"
-  if curl -L -o mtp_install.sh https://git.io/fj5ru; then
-    chmod +x mtp_install.sh || error_exit "Failed to make installer executable"
-    bash mtp_install.sh || error_exit "MTProto Proxy installation failed"
-  else
-    error_exit "Failed to download mtp_install.sh"
-  fi
-  log "${GREEN}MTProto Proxy installed successfully (Method 2)${NC}"
-}
-
-# Install NGINX with stream module
-install_nginx_with_stream() {
-  log "Installing NGINX with stream module..."
-
-  apt install -y ufw fail2ban nginx libnginx-mod-stream || error_exit "Failed to install packages"
-
-  mkdir -p /etc/nginx/stream.d || error_exit "Failed to create stream.d directory"
-  touch "$STREAM_CONF_FILE" || error_exit "Failed to create stream config file"
-
-  # Add stream block if not exists
-  if ! grep -q "stream {" "$NGINX_STREAM_CONF"; then
-    sed -i "/http {/i \\
-stream {\\
-    include /etc/nginx/stream.d/*.conf;\\
-}" "$NGINX_STREAM_CONF" || error_exit "Failed to modify nginx.conf"
-  fi
-
-  log "${GREEN}NGINX installed successfully${NC}"
-}
-
-# Install PHP
-install_php() {
-  log "Installing PHP..."
-
-  apt install -y php php-cli php-fpm php-curl || error_exit "Failed to install PHP packages"
-  get_php_version
-
-  log "${GREEN}PHP $PHP_VERSION installed successfully${NC}"
-}
-
-# Install Certbot
-install_certbot() {
-  log "Installing Certbot..."
-
-  apt install -y certbot python3-certbot-nginx || error_exit "Failed to install Certbot"
-
-  log "${GREEN}Certbot installed successfully${NC}"
-}
-
-# Create password file
-create_password() {
-  log "Creating password file..."
-
-  while true; do
-    read -p "Enter new password for IP whitelist page (min 12 chars): " -s PASSWORD
-    echo
-    if [[ ${#PASSWORD} -ge 12 ]]; then
-      break
-    fi
-    echo -e "${YELLOW}Password must be at least 12 characters long.${NC}"
-  done
-
-  read -p "Confirm new password: " -s PASSWORD_CONFIRM
-  echo
-
-  if [[ "$PASSWORD" != "$PASSWORD_CONFIRM" ]]; then
-    error_exit "Passwords do not match!"
-  fi
-
-  SALT=$(openssl rand -hex 8) || error_exit "Failed to generate salt"
-  HASHED_PASSWORD=$(echo -n "$PASSWORD$SALT" | sha256sum | awk '{print $1}') || error_exit "Failed to hash password"
-
-  echo "$HASHED_PASSWORD:$SALT" > "$PASSWORD_FILE" || error_exit "Failed to create password file"
-  chmod 600 "$PASSWORD_FILE" || error_exit "Failed to set password file permissions"
-  chown www-data:www-data "$PASSWORD_FILE" || error_exit "Failed to set password file ownership"
-
-  log "${GREEN}Password file created successfully${NC}"
-}
-
-# Create necessary files and set permissions
-create_files_and_permissions() {
-  log "Creating files and setting permissions..."
-
-  mkdir -p "$WEB_DIR" || error_exit "Failed to create web directory"
-  touch "$WHITE_LIST_FILE" || error_exit "Failed to create whitelist file"
-  chmod 644 "$WHITE_LIST_FILE" || error_exit "Failed to set whitelist file permissions"
-
-  touch "$USED_TOKENS_FILE" || error_exit "Failed to create used tokens file"
-  chmod 600 "$USED_TOKENS_FILE" || error_exit "Failed to set tokens file permissions"
-
-  touch "$TELEGRAM_USERS_FILE" || error_exit "Failed to create Telegram users file"
-  chmod 600 "$TELEGRAM_USERS_FILE" || error_exit "Failed to set permissions for Telegram users file"
-  chown www-data:www-data "$TELEGRAM_USERS_FILE" || error_exit "Failed to set ownership for Telegram users file"
-
-  touch "$TELEGRAM_BOT_TOKEN_FILE" || error_exit "Failed to create Telegram bot token file"
-  chmod 600 "$TELEGRAM_BOT_TOKEN_FILE" || error_exit "Failed to set permissions for Telegram bot token file."
-  chown root:root "$TELEGRAM_BOT_TOKEN_FILE" || error_exit "Failed to set ownership for Telegram bot token file."
-
-  if [[ ! -f "$PASSWORD_FILE" ]]; then
-    create_password
-  else
-    # Read existing password hash and salt
-    local passdata
-    passdata=$(cat "$PASSWORD_FILE") || error_exit "Failed to read password file"
-    HASHED_PASSWORD="${passdata%%:*}"
-    SALT="${passdata##*:}"
-  fi
-
-  # Create PHP script (Logic for long links with pass/token)
-  cat > "$WEB_DIR/post.php" <<'EOF'
-<?php
-function is_password_correct($pass, $salt, $stored_hash) {
-    return hash('sha256', $pass . $salt) === $stored_hash;
-}
-
-function token_used($token, $used_tokens_file) {
-    $used_tokens = file_exists($used_tokens_file) ? file($used_tokens_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
-    return in_array($token, $used_tokens);
-}
-
-function mark_token_used($token, $used_tokens_file) {
-    file_put_contents($used_tokens_file, $token . "\n", FILE_APPEND | LOCK_EX);
-}
-
-function is_one_time_token_valid($token, $secret, $used_tokens_file) {
-    if (token_used($token, $used_tokens_file)) return false;
-    $decoded = base64_decode($token, true);
-    if (!$decoded) return false;
-    $parts = explode(':', $decoded);
-    if (count($parts) !== 2) return false;
-    list($timestamp, $hash) = $parts;
-    if (!ctype_digit($timestamp)) return false;
-    if (time() - intval($timestamp) > 2592000) return false; // 30 days expiry
-    $check_hash = hash('sha256', $secret . $timestamp);
-    if (!hash_equals($check_hash, $hash)) return false;
-    return true;
-}
-
-function is_five_min_token_valid($token, $secret) {
-    $decoded = base64_decode($token, true);
-    if (!$decoded) return false;
-    $parts = explode(':', $decoded);
-    if (count($parts) !== 2) return false;
-    list($timestamp, $hash) = $parts;
-    if (!ctype_digit($timestamp)) return false;
-    if (time() - intval($timestamp) > 900) return false; // 15 min expiry
-    $check_hash = hash('sha256', $secret . $timestamp);
-    if (!hash_equals($check_hash, $hash)) return false;
-    return true;
-}
-
-// Main
-$password_file = "/etc/nginx/.password";
-$used_tokens_file = "/etc/nginx/used_tokens.txt";
-$whitelist_file = "/etc/nginx/whitelist.txt";
-
-// Determine client IP, prioritizing X-Real-IP or X-Forwarded-For if set by a trusted proxy
-$ip = $_SERVER['REMOTE_ADDR'];
-if (isset($_SERVER['HTTP_X_REAL_IP']) && $_SERVER['HTTP_X_REAL_IP'] !== '') {
-    $ip = $_SERVER['HTTP_X_REAL_IP'];
-} elseif (isset($_SERVER['HTTP_X_FORWARDED_FOR']) && $_SERVER['HTTP_X_FORWARDED_FOR'] !== '') {
-    // Take the first IP if there are multiple (e.g., from multiple proxies)
-    $ip = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0];
-}
-
-list($stored_hash, $salt) = explode(":", trim(file_get_contents($password_file)));
-
-if (!isset($_GET['pass']) || empty($_GET['pass'])) {
-    http_response_code(400);
-    exit("Missing required parameter: pass");
-}
-$pass = base64_decode(strtr($_GET['pass'], '_-', '/+'));
-
-$token = isset($_GET['token']) ? $_GET['token'] : '';
-if (empty($token)) {
-    http_response_code(400);
-    exit("Missing required parameter: token");
-}
-
-if (!is_password_correct($pass, $salt, $stored_hash)) {
-    http_response_code(403);
-    exit("Access denied: Incorrect password.");
-}
-
-$secret = hash('sha256', $pass . $salt);
-
-if (is_one_time_token_valid($token, $secret, $used_tokens_file)) {
-    mark_token_used($token, $used_tokens_file);
-} elseif (is_five_min_token_valid($token, $secret)) {
-    // Valid token, continue
-} else {
-    http_response_code(403);
-    exit("Access denied: Invalid or expired token.");
-}
-
-// Prepare the new entry with a timestamp
-$timestamp = date('Y-m-d H:i:s');
-$new_entry_base = "allow $ip;";
-$new_entry_with_timestamp = "$new_entry_base # added $timestamp\n";
-
-$existing_lines = file_exists($whitelist_file) ? file($whitelist_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
-
-$ip_already_whitelisted = false;
-foreach ($existing_lines as $line) {
-    # Check if the IP is already in the whitelist, ignoring the timestamp comment
-    if (strpos(trim($line), $new_entry_base) === 0) {
-        $ip_already_whitelisted = true;
-        break;
-    }
-}
-
-if (!$ip_already_whitelisted) {
-    file_put_contents($whitelist_file, $new_entry_with_timestamp, FILE_APPEND | LOCK_EX);
-    echo "IP $ip added to whitelist.";
-} else {
-    echo "IP $ip is already whitelisted.";
-}
-?>
-EOF
-
-  chmod 644 "$WEB_DIR"/*.php || error_exit "Failed to set PHP file permissions"
-
-  log "${GREEN}Files created and permissions set successfully${NC}"
-}
-
-# Setup NGINX site configuration (Includes robust PHP processing)
-# Setup NGINX site configuration (Includes robust PHP processing)
-# ... (previous code) ...
-
-# Setup NGINX site configuration (Includes robust PHP processing)
-setup_nginx_site() {
-  log "Configuring NGINX site..."
-
-  while true; do
-    read -p "Enter your domain (must already point to this server): " DOMAIN
-    validate_domain "$DOMAIN" && break
-  done
-
-  # Pre-flight check: Domain resolution
-  check_domain_resolution "$DOMAIN"
-
-  while true; do
-    read -p "Enter your Telegram proxy port (e.g., 48500): " -i "48500" -e PROXY_PORT # Added default
-    validate_port "$PROXY_PORT" && break
-  done
-
-  while true; do
-    read -p "Enter NGINX whitelist gateway port (e.g., 8443): " -i "8443" -e NGINX_PORT # Added default
-    validate_port "$NGINX_PORT" && break
-  done
-
-  get_php_version
-  if [[ -z "$PHP_VERSION" ]]; then
-    error_exit "PHP version could not be detected"
-  fi
-  # Prompt for proxy protocol configuration
-  local use_proxy_protocol="n"
-  read -p "Are you using a load balancer/proxy that sends PROXY protocol (e.g., Cloudflare, HAProxy)? [y/N]: " use_proxy_protocol
-  use_proxy_protocol=$(echo "$use_proxy_protocol" | tr '[:upper:]' '[:lower:]')
-
-  local proxy_ip_range=""
-  if [[ "$use_proxy_protocol" == "y" ]]; then
-      read -p "Enter the IP address or CIDR range of your trusted proxy (e.g., 192.168.1.0/24 or 0.0.0.0/0 for all, but use with caution!): " proxy_ip_range
-      if [[ -z "$proxy_ip_range" ]]; then
-          error_exit "Proxy IP range cannot be empty if PROXY protocol is enabled."
-      fi
-  fi
-
-  # Create an initial HTTP server block (Certbot needs something to modify)
-  # This block will be overwritten later, but Certbot expects a server block for the domain.
-  cat > "$WHITELIST_SITE_CONF" <<EOF
-server {
-  listen 80;
-  server_name $DOMAIN;
-  root $WEB_DIR;
-  index index.php index.html;
-  location / {
-    try_files \$uri \$uri/ =404;
-  }
-}
-EOF
-
-  # Create symlink (should be done before Certbot runs)
-  ln -sf "$WHITELIST_SITE_CONF" "$NGINX_SITES_LINK" || error_exit "Failed to create NGINX symlink"
-
-  # Obtain SSL certificate
-  log "Obtaining SSL certificate..."
-  local cert_success=false
-  local ssl_cert_path="/etc/ssl/certs/nginx-selfsigned.crt" # Default to self-signed paths
-  local ssl_key_path="/etc/ssl/private/nginx-selfsigned.key"
-  local ssl_trusted_cert_path="" # Default to empty for self-signed
-
-  if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m admin@$DOMAIN; then
-    log "${GREEN}Certbot SSL certificate obtained successfully.${NC}"
-    cert_success=true
-    ssl_cert_path="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"
-    ssl_key_path="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
-    ssl_trusted_cert_path="/etc/letsencrypt/live/$DOMAIN/chain.pem"
-  else
-    log "${YELLOW}Certbot failed to obtain certificate. Falling back to self-signed certificate.${NC}"
-    # Ensure self-signed certificate is generated only if Certbot failed
-    if openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-      -keyout "$ssl_key_path" \
-      -out "$ssl_cert_path" \
-      -subj "/CN=$DOMAIN"; then
-      log "${GREEN}Self-signed certificate created successfully.${NC}"
-    else
-      error_exit "Failed to create self-signed certificate after Certbot failure."
-    fi
-    cert_success=false
-  fi
-
-
-  # Create the final NGINX server block (HTTPS and HTTP redirect)
-  cat > "$WHITELIST_SITE_CONF" <<EOF
-server {
-    listen 443 ssl http2 $(if [[ "$use_proxy_protocol" == "y" ]]; then echo "proxy_protocol"; fi);
-    listen [::]:443 ssl http2 $(if [[ "$use_proxy_protocol" == "y" ]]; then echo "proxy_protocol"; fi);
-    server_name $DOMAIN;
-
-    root $WEB_DIR;
-    index index.php index.html index.htm;
-
-    $(if [[ "$use_proxy_protocol" == "y" ]]; then
-      echo "  set_real_ip_from $proxy_ip_range;"
-      echo "  real_ip_header proxy_protocol;"
-    fi)
-
-    ssl_certificate $ssl_cert_path;
-    ssl_certificate_key $ssl_key_path;
-    $(if [[ -n "$ssl_trusted_cert_path" ]]; then echo "    ssl_trusted_certificate $ssl_trusted_cert_path;"; fi) # Only include if chain exists
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384';
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:50m;
-#    ssl_stapling on;
-#    ssl_stapling_verify on;
-#    resolver 8.8.8.8 8.8.4.4 valid=300s;
-#    resolver_timeout 5s;
-
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload";
-    add_header X-Frame-Options DENY;
-    add_header X-Content-Type-Options nosniff;
-    add_header X-XSS-Protection "1; mode=block";
-
-    server_tokens off;
-
-    location / {
-        try_files \$uri \$uri/ =404;
-    }
-
-    location ~ /\.ht {
-        deny all;
-    }
-
-    location ~ \.php\$ {
-        # Ensure the PHP file exists before passing to FPM
-        try_files \$uri =404;
-
-        fastcgi_split_path_info ^(.+\.php)(/.+)\$;
-        fastcgi_pass unix:/run/php/php$PHP_VERSION-fpm.sock; # Uses detected PHP version
-        fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        include fastcgi_params; # Ensure this is included after SCRIPT_FILENAME
-
-        # Pass real IP to PHP (NGINX updates \$remote_addr after proxy_protocol processing)
-        $(if [[ "$use_proxy_protocol" == "y" ]]; then
-          echo "    fastcgi_param REMOTE_ADDR \$remote_addr;"
-          echo "    fastcgi_param HTTP_X_REAL_IP \$remote_addr;"
-          echo "    fastcgi_param HTTP_X_FORWARDED_FOR \$remote_addr;"
-        fi)
-    }
-}
-
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $DOMAIN;
-    return 301 https://\$host\$request_uri;
-}
-EOF
-
-  # Create stream configuration
-  mkdir -p "$(dirname "$STREAM_CONF_FILE")" || error_exit "Failed to create stream.d directory"
-  cat > "$STREAM_CONF_FILE" <<EOF
-server {
-    listen $NGINX_PORT;
-    proxy_pass 127.0.0.1:$PROXY_PORT;
-    proxy_timeout 20m;
-    proxy_connect_timeout 1s;
-
-    allow 127.0.0.1;
-    include $WHITE_LIST_FILE;
-    deny all;
-}
-EOF
-
-  # Set secure permissions
-  chmod 755 /etc/nginx || error_exit "Failed to set NGINX directory permissions" # Changed to 755 for broader access
-  systemctl reload nginx || error_exit "Failed to reload NGINX"
-
-  save_config
-
-  log "${GREEN}NGINX site configured successfully${NC}"
-}
-# ... (rest of the script) ...
-
-# Fix permissions (also includes verification)
-fix_permissions() {
-  log "Fixing and Verifying permissions..."
-
-  chown -R www-data:www-data "$WEB_DIR" || error_exit "Failed to set web directory ownership"
-  chown www-data:www-data "$PASSWORD_FILE" || error_exit "Failed to set password file ownership"
-  chown www-data:www-data "$WHITE_LIST_FILE" || error_exit "Failed to set whitelist file ownership"
-  chown www-data:www-data "$USED_TOKENS_FILE" || error_exit "Failed to set tokens file ownership"
-  chown www-data:www-data "$TELEGRAM_USERS_FILE" || error_exit "Failed to set ownership for Telegram users file"
-  chown root:root "$TELEGRAM_BOT_TOKEN_FILE" || error_exit "Failed to set ownership for Telegram bot token file"
-
-  chmod 644 "$WEB_DIR"/*.php || error_exit "Failed to set PHP file permissions"
-  chmod 600 "$PASSWORD_FILE" || error_exit "Failed to set password file permissions"
-  chmod 600 "$WHITE_LIST_FILE" || error_exit "Failed to set whitelist file permissions"
-  chmod 600 "$USED_TOKENS_FILE" || error_exit "Failed to set tokens file permissions"
-  chmod 600 "$TELEGRAM_USERS_FILE" || error_exit "Failed to set permissions for Telegram users file"
-  chmod 600 "$TELEGRAM_BOT_TOKEN_FILE" || error_exit "Failed to set permissions for Telegram bot token file."
-
-  chmod 755 /etc/nginx || error_exit "Failed to set NGINX directory permissions"
-  chmod 755 /var/www || error_exit "Failed to set www directory permissions"
-  chmod 755 "$WEB_DIR" || error_exit "Failed to set web directory permissions"
-
-  # Verify permissions
-  local success=true
-  sudo -u www-data test -r "$PASSWORD_FILE" || { log "${YELLOW}Warning: www-data cannot read password file${NC}"; success=false; }
-  sudo -u www-data test -w "$WHITE_LIST_FILE" || { log "${YELLOW}Warning: www-data cannot write to whitelist${NC}"; success=false; }
-  sudo -u www-data test -w "$USED_TOKENS_FILE" || { log "${YELLOW}Warning: www-data cannot write to used tokens file${NC}"; success=false; }
-  sudo -u www-data test -r "$TELEGRAM_USERS_FILE" || { log "${YELLOW}Warning: www-data cannot read Telegram users file${NC}"; success=false; }
-  sudo -u www-data test -w "$TELEGRAM_USERS_FILE" || { log "${YELLOW}Warning: www-data cannot write to Telegram users file${NC}"; success=false; }
-  sudo -u root test -r "$TELEGRAM_BOT_TOKEN_FILE" || { log "${YELLOW}Warning: root cannot read Telegram bot token file${NC}"; success=false; }
-
-  # Set stream config permissions
-  chown root:root "$STREAM_CONF_FILE" || error_exit "Failed to set stream config ownership"
-  chmod 644 "$STREAM_CONF_FILE" || error_exit "Failed to set stream config permissions"
-
-  if [[ "$success" = true ]]; then
-    log "${GREEN}Permissions fixed and verified successfully${NC}"
-  else
-    log "${YELLOW}Some permissions issues might persist. Please review warnings above.${NC}"
-  fi
-}
-
-# Configure Fail2ban jails for NGINX and PHP-FPM
-configure_fail2ban() {
-    log "Configuring Fail2ban jails for NGINX and PHP-FPM..."
-
-    # NGINX HTTP/HTTPS jail
-    cat > "/etc/fail2ban/jail.d/nginx-whitelist.conf" <<EOF
-[nginx-whitelist]
-enabled = true
-port = http,https,$NGINX_PORT
-filter = nginx-whitelist
-logpath = /var/log/nginx/access.log
-maxretry = 5
-bantime = 3600
-findtime = 600
-EOF
-
-    # NGINX filter for whitelist attempts (adjust to only match pass/token, no id)
-    cat > "/etc/fail2ban/filter.d/nginx-whitelist.conf" <<EOF
-[Definition]
-failregex = <HOST> -.*"GET /post.php.*(pass=|token=).*HTTP.*" (400|403)
-ignoreregex =
-EOF
-
-    # PHP-FPM jail (if PHP-FPM logs to a separate file, otherwise NGINX access.log is primary)
-    log "Fail2ban configuration primarily targets NGINX access.log for whitelist attempts."
-    log "If PHP-FPM errors are logged separately with IP, consider adding a specific PHP-FPM jail."
-
-    # Enable Fail2ban to start on boot
-    systemctl enable fail2ban || error_exit "Failed to enable Fail2ban"
-    # Restart Fail2ban to apply new configuration
-    systemctl restart fail2ban || error_exit "Failed to restart Fail2ban"
-    log "${GREEN}Fail2ban configured, enabled, and restarted.${NC}"
-}
-
-# Clean old whitelist entries
-clean_old_whitelist_entries() {
-    log "Cleaning old whitelist entries..."
-    local temp_whitelist_file=$(mktemp)
-    local current_timestamp=$(date +%s)
-    local expiry_seconds=2592000 # 30 days, matches one-time token expiry
-
-    if [[ ! -f "$WHITE_LIST_FILE" ]] || [[ ! -s "$WHITE_LIST_FILE" ]]; then
-        log "${YELLOW}Whitelist file not found or is empty, nothing to clean.${NC}"
-        return
-    fi
-
-    while IFS= read -r line; do
-        # Extract timestamp from comment
-        local timestamp_str=$(echo "$line" | sed -n 's/.*# added \([0-9\-]\{10\} [0-9:]\{8\}\)/\1/p')
-
-        if [[ -n "$timestamp_str" ]]; then
-            # Convert timestamp string to seconds since epoch
-            local entry_timestamp=$(date -d "$timestamp_str" +%s 2>/dev/null)
-
-            if [[ -n "$entry_timestamp" && "$((current_timestamp - entry_timestamp))" -lt "$expiry_seconds" ]]; then
-                echo "$line" >> "$temp_whitelist_file"
-            else
-                log "Removed expired entry: $line"
-            fi
+#--------------
+
+# Change port
+change_port() {
+    if [ -f "/etc/nginx/sites-available/$saved_domain" ]; then
+        current_port=$(grep -oP "listen \[::\]:\K\d+" "/etc/nginx/sites-available/$saved_domain" | head -1)
+        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        echo -e "${cyan}Current HTTPS port: ${purple}$current_port${rest}"
+        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+        read -p "Enter the new HTTPS port [default: 443]: " new_port
+        new_port=${new_port:-443}
+        echo -e "${yellow}×××××××××××××××××××××××${rest}"
+
+        # Change the port in NGINX configuration file
+        sed -i "s/listen \[::\]:$current_port ssl http2 ipv6only=on;/listen [::]:$new_port ssl http2 ipv6only=on;/g" "/etc/nginx/sites-available/$saved_domain"
+        sed -i "s/listen $current_port ssl http2;/listen $new_port ssl http2;/g" "/etc/nginx/sites-available/$saved_domain"
+        
+        # Restart NGINX service
+        systemctl restart nginx
+
+        # Check if NGINX restarted successfully
+        if systemctl is-active --quiet nginx; then
+            echo -e "${green}✅ HTTPS port changed successfully to ${purple}$new_port${rest}"
         else
-            # Keep lines without a timestamp (e.g., manually added, or from older versions)
-            echo "$line" >> "$temp_whitelist_file"
+            echo -e "${red}❌ Error: NGINX failed to restart.${rest}"
         fi
-    done < "$WHITE_LIST_FILE"
-
-    mv "$temp_whitelist_file" "$WHITE_LIST_FILE" || error_exit "Failed to move temporary whitelist file"
-    chmod 600 "$WHITE_LIST_FILE" || error_exit "Failed to set whitelist file permissions after cleanup"
-    chown www-data:www-data "$WHITE_LIST_FILE" || error_exit "Failed to set whitelist file ownership after cleanup"
-
-    systemctl reload nginx || log "${YELLOW}Failed to reload NGINX after whitelist cleanup. Manual reload might be needed.${NC}"
-    log "${GREEN}Old whitelist entries cleaned. Remember to set up a cron job for daily cleanup.${NC}"
-    echo -e "\n${BLUE}To automate daily cleanup, add the following to your crontab (run 'sudo crontab -e'):${NC}"
-    echo -e "${YELLOW}0 3 * * * /bin/bash $(readlink -f "$0") --clean-whitelist >> $LOG_FILE 2>&1${NC}"
-    echo -e "${YELLOW}(This will run the cleanup at 3:00 AM daily. Adjust time as needed.)${NC}"
-}
-
-
-# Generate token URL (Generates long links with pass/token)
-generate_token_url() {
-  log "Generating access token URLs..."
-
-  if [[ ! -f "$PASSWORD_FILE" ]]; then
-    error_exit "Password file not found! Please install first."
-  fi
-
-  read -p "Enter your password for whitelist page: " -s PASS_INPUT
-  echo
-
-  if [[ -z "$DOMAIN" ]]; then
-    read -p "Enter your domain (used in URL): " DOMAIN
-    validate_domain "$DOMAIN"
-  fi
-
-  # Read salt and hashed password from file
-  local raw
-  raw=$(cat "$PASSWORD_FILE") || error_exit "Failed to read password file"
-  local HASHED_PASSWORD="${raw%%:*}"
-  local SALT="${raw##*:}"
-
-  # Verify password
-  SECRET=$(echo -n "$PASS_INPUT$SALT" | sha256sum | awk '{print $1}') || error_exit "Failed to generate secret"
-  if [[ "$SECRET" != "$HASHED_PASSWORD" ]]; then
-    error_exit "Password incorrect!"
-  fi
-
-  # Generate 15-minute token URL
-  TIMESTAMP_5MIN=$(date +%s)
-  TOKEN_HASH_5MIN=$(echo -n "${SECRET}${TIMESTAMP_5MIN}" | sha256sum | awk '{print $1}') || error_exit "Failed to generate token hash"
-  TOKEN_RAW_5MIN="${TIMESTAMP_5MIN}:${TOKEN_HASH_5MIN}"
-  # Ensure no newlines or padding in base64 output
-  TOKEN_5MIN=$(echo -n "$TOKEN_RAW_5MIN" | base64 | tr -d '=' | tr -d '\n' | tr '/+' '_-') || error_exit "Failed to encode token"
-
-
-  # Generate one-time token URL
-  TIMESTAMP_OT=$(date +%s)
-  TOKEN_HASH_OT=$(echo -n "${SECRET}${TIMESTAMP_OT}" | sha256sum | awk '{print $1}') || error_exit "Failed to generate token hash"
-  TOKEN_RAW_OT="${TIMESTAMP_OT}:${TOKEN_HASH_OT}"
-  # Ensure no newlines or padding in base64 output
-  TOKEN_OT=$(echo -n "$TOKEN_RAW_OT" | base64 | tr -d '=' | tr -d '\n' | tr '/+' '_-') || error_exit "Failed to encode token"
-
-  # Generate URLs
-  PASS_B64=$(echo -n "$PASS_INPUT" | base64 | tr -d '=' | tr '/+' '_-') || error_exit "Failed to encode password"
-
-  echo -e "\n${GREEN}Your access URLs:${NC}"
-  echo -e "1) ${BLUE}One-time token URL${NC} (valid for single use within 30 days):"
-  echo "https://$DOMAIN/post.php?pass=$PASS_B64&token=$TOKEN_OT"
-
-  echo -e "\n2) ${BLUE}15-minute token URL${NC} (valid for 15 minutes, reusable):"
-  echo "https://$DOMAIN/post.php?pass=$PASS_B64&token=$TOKEN_5MIN"
-
-  echo -e "\n${YELLOW}NOTE:${NC} Use one-time token once only, 15-minute token can be used multiple times within 15 mins."
-}
-
-send_whitelist_link_telegram() {
-    local CURRENT_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" # Use the globally loaded token
-    local CHAT_ID=""
-    local USERNAME=""
-    local TELEGRAM_PROXY_LINK_TO_SEND="" # Renamed for clarity - this is the link to send to the user
-    local choice=""
-    local use_saved_token="n"
-
-    # Check if DOMAIN and PASSWORD_FILE are set
-    if [[ -z "$DOMAIN" ]]; then
-        log "${YELLOW}Domain not set. Please run option 2 to install the whitelist system first.${NC}"
-        return
-    fi
-    if [[ ! -f "$PASSWORD_FILE" ]]; then
-        log "${YELLOW}Password file not found. Please run option 2 to install the whitelist system first.${NC}"
-        return
-    fi
-
-    # Read salt and hashed password from file to set SECRET and PASS_B64
-    local raw
-    raw=$(cat "$PASSWORD_FILE") || error_exit "Failed to read password file"
-    local HASHED_PASSWORD_STORED="${raw%%:*}"
-    local SALT_STORED="${raw##*:}"
-
-    read -p "Enter your password for whitelist page to generate token: " -s PASS_INPUT
-    echo
-
-    SECRET=$(echo -n "$PASS_INPUT$SALT_STORED" | sha256sum | awk '{print $1}') || error_exit "Failed to generate secret"
-    if [[ "$SECRET" != "$HASHED_PASSWORD_STORED" ]]; then
-        error_exit "Password incorrect! Cannot generate token."
-    fi
-    # PASS_B64 is needed to derive SECRET in PHP for the long link format
-    PASS_B64=$(echo -n "$PASS_INPUT" | base64 | tr -d '=' | tr '/+' '_-') || error_exit "Failed to encode password"
-
-
-    # Handle Telegram Bot Token
-    if [[ -n "$CURRENT_BOT_TOKEN" ]]; then
-        read -p "Existing Telegram Bot Token found. Use it? [Y/n]: " use_saved_token
-        use_saved_token=$(echo "$use_saved_token" | tr '[:upper:]' '[:lower:]')
-        if [[ "$use_saved_token" == "n" ]]; then
-            read -p "Enter new Telegram Bot Token: " BOT_TOKEN_INPUT
-            save_telegram_bot_token "$BOT_TOKEN_INPUT"
-            CURRENT_BOT_TOKEN="$BOT_TOKEN_INPUT"
-        else
-            log "Using saved Telegram Bot Token."
-        fi
+        echo -e "${yellow}×××××××××××××××××××××××${rest}"
     else
-        read -p "No Telegram Bot Token found. Please enter it now: " BOT_TOKEN_INPUT
-        save_telegram_bot_token "$BOT_TOKEN_INPUT"
-        CURRENT_BOT_TOKEN="$BOT_TOKEN_INPUT"
-    fi
-
-
- # --- Start of user-friendly improvements ---
-    if list_telegram_users; then # This function returns 0 if users exist, 1 otherwise
-        echo -e "\n${BLUE}How would you like to send the whitelist link?${NC}"
-        while true; do
-            read -p "  (E) Send to an existing saved user, or (N) Enter details for a new user? [E/N]: " choice
-            choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
-            if [[ "$choice" == "e" || "$choice" == "n" ]]; then
-                break
-            else
-                echo -e "${RED}Invalid choice. Please type 'E' for existing or 'N' for new.${NC}"
-            fi
-        done
-    else
-        # No saved users, force new user entry
-        choice="n"
-        echo -e "${YELLOW}No saved Telegram users found. You will be prompted to enter details for a new user.${NC}"
-    fi
-
-    if [[ "$choice" == "e" ]]; then
-        echo -e "\n${BLUE}Please enter the number of the user from the list above to send the link to.${NC}"
-        read -p "Enter user number (or 0 to go back): " user_num
-        if [[ "$user_num" -eq 0 ]]; then
-            log "${YELLOW}User selection cancelled.${NC}"
-            return # Exit the function if user cancels
-        fi
-
-        local num_users=$(wc -l < "$TELEGRAM_USERS_FILE")
-        if (( user_num < 1 || user_num > num_users )); then
-            error_exit "${RED}Invalid user number: ${user_num}. Please choose a number from the list.${NC}"
-        fi
-
-        local user_line=$(sed -n "${user_num}p" "$TELEGRAM_USERS_FILE")
-        # Safely parse the line using cut
-        USERNAME=$(echo "$user_line" | cut -d':' -f1)
-        CHAT_ID=$(echo "$user_line" | cut -d':' -f2)
-        TELEGRAM_PROXY_LINK_TO_SEND=$(echo "$user_line" | cut -d':' -f3-) # Get everything from 3rd field onwards
-
-        log "Selected existing user: $(echo "$USERNAME" | sed 's/\\:/!COLON!/g' | sed 's/:/ /g' | sed 's/!COLON!/:/g') (ID: $CHAT_ID)"
-        if [[ -n "$TELEGRAM_PROXY_LINK_TO_SEND" ]]; then
-            log "Stored Telegram Proxy Link for user: ${TELEGRAM_PROXY_LINK_TO_SEND}"
-        fi
-    else # choice == "n"
-        echo -e "\n${BLUE}Please enter the details for the new Telegram user.${NC}"
-        read -p "Enter recipient's Telegram Chat ID: " CHAT_ID
-        read -p "Enter a username for this recipient (e.g., 'JohnDoe'): " USERNAME
-        read -p "Enter Telegram proxy link (optional, e.g., 'https://t.me/proxy?server=...'): " TELEGRAM_PROXY_LINK_TO_SEND
-    fi
-    # --- End of user-friendly improvements ---
-
-    # Generate a fresh one-time token for sending via Telegram
-    local TIMESTAMP_OT_TELEGRAM=$(date +%s)
-    local TOKEN_HASH_OT_TELEGRAM=$(echo -n "${SECRET}${TIMESTAMP_OT_TELEGRAM}" | sha256sum | awk '{print $1}') || error_exit "Failed to generate token hash for Telegram"
-    local TOKEN_RAW_OT_TELEGRAM="${TIMESTAMP_OT_TELEGRAM}:${TOKEN_HASH_OT_TELEGRAM}"
-    # Ensure no newlines or padding in base64 output
-    local TOKEN_OT_TELEGRAM=$(echo -n "$TOKEN_RAW_OT_TELEGRAM" | base64 | tr -d '=' | tr -d '\n' | tr '/+' '_-') || error_exit "Failed to encode token for Telegram"
-
-    WHITELIST_LINK="https://${DOMAIN}/post.php?pass=${PASS_B64}&token=${TOKEN_OT_TELEGRAM}"
-
-    # Construct the message including the whitelist link and optionally the proxy link
-    local LINK_TEXT="                1: Click here to whitelist your IP"
-    local MESSAGE="*Hello                           ${USERNAME}
-Your whitelist link* (valid for a limited time, one-time use): 
-    [${LINK_TEXT}](${WHITELIST_LINK})
-*This link is for one-time use and expires in 30 days.*
-* Please click it from the device whose IP you wish to whitelist.*"
-
-    # IMPORTANT: Do NOT include Bash color codes (${BLUE}, ${NC}) in the message sent to Telegram.
-    # They will break Markdown parsing.
-    if [[ -n "$TELEGRAM_PROXY_LINK_TO_SEND" ]]; then
-        MESSAGE+="
-*To configure your Telegram client with a proxy, click here:*
-                             2: [Proxy Link](${TELEGRAM_PROXY_LINK_TO_SEND})"
-        log "Adding Telegram proxy link to message: ${TELEGRAM_PROXY_LINK_TO_SEND}"
-    fi
-
-    log "Attempting to send message to Telegram user ${CHAT_ID}..."
-    response=$(curl -s -X POST "https://api.telegram.org/bot${CURRENT_BOT_TOKEN}/sendMessage" \
-        -d chat_id="${CHAT_ID}" \
-        --data-urlencode text="${MESSAGE}" \
-        -d parse_mode="Markdown")
-
-    echo "Telegram API response: $response"
-    if echo "$response" | grep -q '"ok":true'; then
-        log "${GREEN}Whitelist link sent to Telegram user $(echo "$USERNAME" | sed 's/\\:/!COLON!/g' | sed 's/:/ /g' | sed 's/!COLON!/:/g').${NC}"
-        if [[ "$choice" == "n" ]]; then
-            read -p "Do you want to save this user for future use? [y/N]: " save_user_choice
-            save_user_choice=$(echo "$save_user_choice" | tr '[:upper:]' '[:lower:]')
-            if [[ "$save_user_choice" == "y" ]]; then
-                add_telegram_user "$USERNAME" "$CHAT_ID" "$TELEGRAM_PROXY_LINK_TO_SEND" # Save the link to file
-            fi
-        fi
-    else
-        log "${RED}Failed to send Telegram message.${NC}"
-        log "Response: $response"
+        echo -e "${yellow}×××××××××××××××××××××××××××××××××××${rest}"
+        echo -e "${red}N R P is not installed.${rest}"
+        echo -e "${yellow}×××××××××××××××××××××××××××××××××××${rest}"
     fi
 }
 
-# Show system status
-show_status() {
-  echo -e "\n${BLUE}=== System Status ===${NC}"
-
-  # Check NGINX
-  if systemctl is-active nginx >/dev/null; then
-    echo -e "NGINX: ${GREEN}RUNNING${NC}"
-  else
-    echo -e "NGINX: ${RED}STOPPED${NC}"
-  fi
-
-  # Check PHP-FPM
-  if systemctl is-active "php$PHP_VERSION-fpm" >/dev/null; then
-    echo -e "PHP-FPM: ${GREEN}RUNNING${NC}"
-  else
-    echo -e "PHP-FPM: ${RED}STOPPED${NC}"
-  fi
-
-  # Check whitelist count
-  if [[ -f "$WHITE_LIST_FILE" ]]; then
-    echo -e "Whitelisted IPs: ${CYAN}$(grep -c '^allow' "$WHITE_LIST_FILE")${NC}" # Count lines starting with 'allow'
-  else
-    echo -e "Whitelist file: ${RED}MISSING${NC}"
-  fi
-
-  # Check domain
-  if [[ -n "$DOMAIN" ]]; then
-    echo -e "Configured domain: ${CYAN}$DOMAIN${NC}"
-  else
-    echo -e "Domain: ${YELLOW}NOT CONFIGURED${NC}"
-  fi
-
-  # Check ports
-  if [[ -n "$PROXY_PORT" ]]; then
-    echo -e "Proxy port: ${CYAN}$PROXY_PORT${NC}"
-  else
-    echo -e "Proxy port: ${YELLOW}NOT CONFIGURED${NC}"
-  fi
-
-  if [[ -n "$NGINX_PORT" ]]; then
-    echo -e "Whitelist port: ${CYAN}$NGINX_PORT${NC}"
-  else
-    echo -e "Whitelist port: ${YELLOW}NOT CONFIGURED${NC}"
-  fi
-
-  # Check Certbot renewal timer
-  if command -v systemctl >/dev/null && systemctl list-timers | grep -q 'certbot.timer'; then
-      echo -e "Certbot Auto-Renewal: ${GREEN}ENABLED${NC}"
-      local next_renewal=$(systemctl list-timers certbot.timer | grep 'certbot.timer' | awk '{print $5, $6, $7}')
-      echo -e "  Next renewal: ${CYAN}$next_renewal${NC}"
-  else
-      echo -e "Certbot Auto-Renewal: ${YELLOW}NOT FOUND/DISABLED${NC} (Manual renewal may be required)"
-  fi
-
-  # Check Fail2ban status
-  if systemctl is-active fail2ban >/dev/null; then
-      echo -e "Fail2ban: ${GREEN}RUNNING${NC}"
-      local jails_active=$(fail2ban-client status | grep "Jail list" | sed -E 's/.*Jail list:[ \t]*(.*)/\1/; s/, / /g')
-      if [[ -n "$jails_active" ]]; then
-          echo -e "  Active Jails: ${CYAN}$jails_active${NC}"
-      else
-          echo -e "  Active Jails: ${YELLOW}None (Check configuration)${NC}"
-           
-      fi
-  else
-      echo -e "Fail2ban: ${RED}STOPPED${NC}"
-  fi
-
-  # Check saved Telegram users
-  if [[ -f "$TELEGRAM_USERS_FILE" ]] && [[ -s "$TELEGRAM_USERS_FILE" ]]; then
-      echo -e "Saved Telegram Users: ${CYAN}$(wc -l < "$TELEGRAM_USERS_FILE")${NC}"
-  else
-      echo -e "Saved Telegram Users: ${YELLOW}None${NC}"
-  fi
-
-  # Check Telegram Bot Token status
-  if [[ -f "$TELEGRAM_BOT_TOKEN_FILE" ]] && [[ -s "$TELEGRAM_BOT_TOKEN_FILE" ]]; then
-      echo -e "Telegram Bot Token: ${GREEN}CONFIGURED${NC}"
-  else
-      echo -e "Telegram Bot Token: ${YELLOW}NOT CONFIGURED${NC}"
-  fi
-}
-
-# Uninstall everything
-uninstall() {
-  echo -e "\n${RED}=== UNINSTALL ===${NC}"
-  read -p "Are you sure you want to uninstall everything? [y/N] " confirm
-  if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-    echo "Uninstall cancelled."
-    return
-  fi
-
-  log "Starting uninstallation..."
-
-  # Stop services
-  systemctl stop nginx || log "${YELLOW}Failed to stop NGINX${NC}"
-  systemctl stop "php$PHP_VERSION-fpm" || log "${YELLOW}Failed to stop PHP-FPM${NC}"
-  systemctl stop fail2ban || log "${YELLOW}Failed to stop Fail2ban${NC}"
-
-  # Remove Fail2ban jails
-  rm -f "/etc/fail2ban/jail.d/nginx-whitelist.conf" || log "${YELLOW}Failed to remove Fail2ban jail config${NC}"
-  rm -f "/etc/fail2ban/filter.d/nginx-whitelist.conf" || log "${YELLOW}Failed to remove Fail2ban filter config${NC}"
-  systemctl restart fail2ban || log "${YELLOW}Failed to restart Fail2ban after removing jails${NC}"
-
-  # Remove packages
-  apt remove -y --purge nginx php-fpm php libnginx-mod-stream certbot python3-certbot-nginx fail2ban || log "${YELLOW}Failed to remove some packages${NC}"
-
-  # Remove configuration files
-  rm -rf "$WEB_DIR/post.php" || log "${YELLOW}Failed to remove PHP script${NC}"
-  rm -f "$WHITE_LIST_FILE" "$USED_TOKENS_FILE" "$PASSWORD_FILE" "$TELEGRAM_USERS_FILE" "$TELEGRAM_BOT_TOKEN_FILE" || log "${YELLOW}Failed to remove data files${NC}"
-  rm -f "$WHITELIST_SITE_CONF" "$NGINX_SITES_LINK" || log "${YELLOW}Failed to remove NGINX config${NC}"
-  rm -f "$STREAM_CONF_FILE" || log "${YELLOW}Failed to remove stream config${NC}"
-  rm -f "$CONFIG_FILE" || log "${YELLOW}Failed to remove config file${NC}"
-
-  # Clean up
-  apt autoremove -y || log "${YELLOW}Failed to autoremove packages${NC}"
-
-  log "${GREEN}Uninstallation complete.${NC}"
-}
-
-# Install everything (excluding MTProto Proxy installation)
-install_all() {
-  check_root
-  load_config # Load existing config to see if it's a fresh install
-  create_backup
-
-  log "Starting complete installation of whitelist system..."
-
-  # The MTProto Proxy installation is handled separately via menu option 1
-  # install_mtproto_proxy # This line remains commented out as per your request
-  install_nginx_with_stream
-  install_php
-  install_certbot
-  create_files_and_permissions
-  setup_nginx_site
-  configure_fail2ban # New: Configure Fail2ban
-  fix_permissions # This now also handles verification
-  setup_ufw_rules
-
-  log "${GREEN}Whitelist system installation completed successfully!${NC}"
-  show_status
-}
 # Add this function to your main script
 function tor_menu() {
     GREEN="\033[0;32m"
@@ -1521,6 +934,7 @@ function tor_menu() {
     done
 }
 
+
 #Random HTML
 random_template_site() {
     # Check for dependencies (wget, unzip, shuf are already checked at script start)
@@ -1570,140 +984,137 @@ if [[ "$#" -eq 1 && "$1" == "--random-template" ]]; then
     exit 0
 fi
 
-
-# ==============================================
-# MAIN MENU
-# ==============================================
-
-show_menu() {
-  while true; do
-    clear
-    echo -e "${BLUE}==== MTProto Proxy Whitelist Installer ====${NC}"
-    echo -e "${GREEN}1) Install MTProto Proxy only (choose installation method)"
-    echo -e "2) Install Whitelist System (NGINX, PHP, firewall, Fail2ban)"
-    echo -e "3) Generate access URL with tokens"
-    echo -e "4) Fix permissions"
-    echo -e "5) Change Whitelist Password"
-    echo -e "6) Check system status"
-    echo -e "7) Uninstall everything (full wipe)"
-    echo -e "8) Send whitelist link via Telegram"
-    echo -e "9) Random FakeHtml"
-    echo -e "M) Manage Telegram Users" # New option
-    echo -e "A) Clean Old Whitelisted IPs"
-    echo -e "C) Manage Cloudflare wildcard SSL certs"
-    echo -e "T) Tor Installation"
-    echo -e "0) Exit${NC}"
-    echo -e "==========================================="
-
-    read -p "Choose an option: " choice
-    case $choice in
-      1)
-        check_root
-        echo -e "${GREEN}Choose MTProto Proxy installation method:${NC}"
-        echo "1) Method 1 Python Proxy by alexbers (git.io/fjo34 - Original)"
-        echo "2) Method 2 @seriyps creator of the Erlang Proxy (git.io/fj5ru - Alternative)"
-        read -p "Enter 1 or 2: " mtp_choice
-        case "$mtp_choice" in
-        1) install_mtproto_proxy ;;
-        2) install_mtproto_proxy_method2 ;;
-        *) echo -e "${RED}Invalid choice.${NC}" ;;
-        esac
-        ;;
-      2)
-        install_all
-        ;;
-      3)
-        check_root
-        generate_token_url
-        ;;
-      4)
-        check_root
-        fix_permissions
-        ;;
-      5)
-        check_root
-        create_password
-        ;;
-      6)
-        check_root
-        show_status
-        ;;
-      7)
-        check_root
-        uninstall
-        ;;
-      8)
-        check_root
-        send_whitelist_link_telegram
-        ;;
-      9)
-        check_root
-        random_template_site
-        ;;
-      M|m) # New option
-        check_root
-        manage_telegram_users_menu
-        ;;
-      A|a)
-        check_root
-        clean_old_whitelist_entries
-        ;;
-      C|c)
-        check_root
-        cloudflare_cert_menu 
-        ;;
-      T|t)
-        check_root
-        tor_menu
-        ;;
-        0)
-        echo -e "${BLUE}Exiting...${NC}"
-        exit 0
-        ;;
-      *)
-        echo -e "${RED}Invalid option. Please try again.${NC}"
-        ;;
-    esac
-
-    read -p "Press Enter to continue..."
-  done
+# Uninstall N R P
+uninstall() {
+  # Check if NGINX is installed
+  if [ ! -d "/etc/letsencrypt/live/$saved_domain" ]; then
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+    echo -e "${red}N R P is not installed.${rest}"
+    echo -e "${yellow}×××××××××××××××××××××××${rest}"
+  else
+      echo -e "${green}☑️Uninstalling... ${rest}"
+	  # Remove SSL certificate files
+	  rm -rf /etc/letsencrypt > /dev/null 2>&1
+	  rm -rf /var/www/html/* > /dev/null 2>&1
+	
+	  # Remove NGINX configuration files
+	  find /etc/nginx/sites-available/ -mindepth 1 -maxdepth 1 ! -name 'default' -exec rm -rf {} +
+	  find /etc/nginx/sites-enabled/ -mindepth 1 -maxdepth 1 ! -name 'default' -exec rm -rf {} +
+	
+	  # Restart NGINX service
+	  systemctl restart nginx
+	   
+	  echo -e "${yellow}××××××××××××××××××××××××××××××${rest}"
+	  echo -e "${green}N R P uninstalled successfully.${rest}"
+	  echo -e "${yellow}××××××××××××××××××××××××××××××${rest}"
+  fi
 }
 
-# ==============================================
-# SCRIPT ENTRY POINT
-# ==============================================
+clear
+echo -e "${cyan}originaly from visit for info   --> Peyman * Github.com/Ptechgithub * ${rest}"
+echo ""
+check_status
+echo -e "${purple}***********************${rest}"
+echo -e "${yellow}* ${cyan}N${green}ginx ${cyan}R${green}everse ${cyan}P${green}roxy${yellow} *${rest}"
+echo -e "${purple}***********************${rest}"
+echo -e "${yellow} 1) ${green}Install           ${purple}*${rest}"
+echo -e "${purple}                      * ${rest}"
+echo -e "${yellow} 2) ${green}Change Paths${rest}      ${purple}*${rest}"
+echo -e "${purple}                      * ${rest}"
+echo -e "${yellow} 3) ${green}Change Https Port${rest} ${purple}*${rest}"
+echo -e "${purple}                      * ${rest}"
+echo -e "${yellow} 4) ${green}Install Fake Site${rest} ${purple}*${rest}"
+echo -e "${purple}                      * ${rest}"
+echo -e "${yellow} 5) ${green}Add Traffic Limit${rest} ${purple}*${rest}"
+echo -e "${purple}                      * ${rest}"
+echo -e "${yellow} 6) ${green}Uninstall${rest}         ${purple}*${rest}"
+echo -e "${purple}                      * ${rest}"
+echo -e "${yellow} 0) ${purple}Exit${rest}${purple}              *${rest}"
+echo -e "${purple}***********************${rest}"
+read -p "Enter your choice: " choice
+case "$choice" in
+    1)
+        install
+        ;;
+    2)
+        change_path
+        ;;
+    3)
+        change_port
+        ;;
+    4)
+        install_random_fake_site
+        ;;
+    5)
+        add_limit
+        ;;
+    6)
+        uninstall
+        ;;
+    0)
+        echo -e "${cyan}By 🖐${rest}"
+        exit
+        ;;
+    *)
+        echo -e "${yellow}××××××××××××××××××××××××××××××${rest}"
+        echo "Invalid choice. Please select a valid option."
+        echo -e "${yellow}××××××××××××××××××××××××××××××${rest}"
+        ;;
+esac
 
-# Initialize logging
-mkdir -p "$(dirname "$LOG_FILE")"
-touch "$LOG_FILE"
-chmod 600 "$LOG_FILE"
+}
+# Main menu
+main_menu() {
+    while true; do
+        echo -e "${LGREEN}===== Main Menu =====${NC}"
+        echo -e " ${YELLOW}1.${NC} Update System"
+        echo -e " ${YELLOW}2.${NC} Install Utilities"
+        echo -e " ${YELLOW}3.${NC} Install Nginx"
+        echo -e " ${YELLOW}4.${NC} Manage Nginx"
+        echo -e " ${YELLOW}5.${NC} Configure Nginx Wildcard SSL"
+        echo -e " ${YELLOW}6.${NC} Install x-ui"
+        echo -e " ${YELLOW}7.${NC} Reality-EZ Menu"
+        echo -e " ${YELLOW}8.${NC} Install Hiddify Panel Ubuntu 22+"
+        echo -e " ${YELLOW}9.${NC} Install Telegram MTProto Proxy"
+        echo -e " ${YELLOW}10.${NC} Install OpenVPN and Stunnel"
+        echo -e " ${YELLOW}11.${NC} Install fail2ban"
+        echo -e " ${YELLOW}12.${NC} Create Swap File"
+        echo -e " ${YELLOW}13.${NC} Change SSH port"
+        echo -e " ${YELLOW}14.${NC} Schedule system reboot every 2 days"
+        echo -e " ${YELLOW}15.${NC} Uninstall Nginx"
+        echo -e " ${YELLOW}16.${NC} Nginx reverse proxy setup with path for x-ui v2ray configs TESTING....."
+        echo -e " ${YELLOW}17.${NC} Random"random_template_site..."
+        echo -e " ${YELLOW}18.${NC} Tor Installation "
+	echo -e " ${YELLOW}17.${NC} Manage Functions"
+        echo -e " ${YELLOW}0.${NC} Exit"
+        echo -e "${LGREEN}=====================${NC}"
+        read -p "Enter your choice: " main_choice
+        case $main_choice in
+            1) update_system ;;
+            2) install_utilities ;;
+            3) install_nginx ;;
+            4) manage_nginx ;;
+            5) configure_nginx_wildcard_ssl ;;
+            6) install_x_ui ;;
+            7) handle_reality_ez ;;
+            8) install_hiddify_panel ;;
+            9) install_telegram_proxy ;;
+            10) install_openvpn ;;
+            11) install_fail2ban ;;
+            12) create_swap ;;
+            13) change_ssh_port ;;
+            14) schedule_reboot ;;
+            15) uninstall_nginx ;;
+            16) random_template_site ;;
+            17) tor_menu ;;
 
-# Check if script is called with --clean-whitelist argument for cron job
-if [[ "$#" -eq 1 && "$1" == "--clean-whitelist" ]]; then
-    log "Script called for automated whitelist cleanup."
-    clean_old_whitelist_entries
-    exit 0
-fi
+	    16) nginx_reverseProxy;;
+	    17) manage_functions;;  # This is the new function
+             0) exit 0 ;;
+            *) handle_error "Invalid choice. Please enter a number between 0 and 16." ;;
+        esac
+    done
+}
 
-# Check dependencies
-check_dependencies
-
-# Perform apt update here for fresh package lists before any installs
-log "Updating package lists..."
-apt update || error_exit "Failed to update package lists."
-
-# Load any existing config
-load_config
-
-# Get PHP version
-get_php_version
-
-# First-time installation check
-if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo -e "\n${BLUE}Welcome! It looks like this is your first time running the MTProto Proxy Whitelist Installer.${NC}"
-    echo -e "${YELLOW}Please start by selecting option 2) Install Whitelist System to set up NGINX, PHP, and other components.${NC}\n"
-    read -p "Press Enter to continue to the main menu..."
-fi
-
-# Start main menu
-show_menu
+# Start the main menu
+main_menu
