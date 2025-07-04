@@ -1041,9 +1041,10 @@ main_menu() {
         echo "15) Uninstall Nginx"
         echo "16) Install Random Template Site"
         echo "17) Tor Installation"
-        echo "18) Nginx Reverse Proxy Setup"
-        echo "19) Manage Functions"
-        echo "20) Psiphone+3x-ui (binding) Installer"
+        echo "18) Psiphone+3x-ui (binding) Installer"
+        echo "19) Nginx Reverse Proxy Setup"
+        echo "20) Manage Functions"
+        
         echo "0) Exit"
         echo -e "${LGREEN}=====================${NC}"
         
@@ -1067,9 +1068,10 @@ main_menu() {
             15) uninstall_nginx ;;
             16) random_template_site ;;
             17) tor_menu ;;
-            18) nginx_reverseProxy ;;
-            19) manage_functions ;;
-            20) Install_psiphon ;;
+            18) Install_psiphon ;;
+            19) nginx_reverseProxy ;;
+            20) manage_functions ;;
+            
             0) 
                 echo -e "${GREEN}Exiting...${NC}"
                 exit 0 ;;
