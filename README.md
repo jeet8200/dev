@@ -24,10 +24,11 @@
             14) schedule_reboot 
             15) uninstall_nginx 
             16) random_template_site 
-            17) tor_menu +3x-ui binding 
-            18) nginx_reverseProxy 
-            19) manage_functions 
-            20) Psiphone+3x-ui (binding) Installer
+            17) tor_menu +3x-ui binding
+            18) Psiphone+3x-ui (binding) Installer
+            19) nginx_reverseProxy 
+            20) manage_functions 
+            
 
 
 
