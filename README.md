@@ -1,9 +1,11 @@
-                                                  ## Quick Start
-curl -O https://raw.githubusercontent.com/jeet8200/dev/main/autostartup.sh && chmod +x autostartup.sh && bash autostartup.sh &&
+# Ultimate Server Manager
+ 🔧 All-in-one Bash script for Linux server management
 
-                                                  # Ultimate Server Manager
 
-                                   🔧 All-in-one Bash script for Linux server management
+# Quick Start
+                                  
+      Curl -O https://raw.githubusercontent.com/jeet8200/dev/main/autostartup.sh &&
+      chmod +x autostartup.sh && bash autostartup.sh 
 
 ## Features
             1) update_system 
