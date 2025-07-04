@@ -915,64 +915,175 @@ tor_menu() {
 }
 
 # Function: Install Psiphon with systemd and tweaks
-function install_psiphon() {
-    PSIPHON_DIR="/opt/psiphon"
-    PSIPHON_BIN="$PSIPHON_DIR/psiphon-core"
+psiphon_management() {
+    PSIPHON_DIR="/usr/local/psiphon"
     CONFIG_FILE="$PSIPHON_DIR/psiphon.config"
+    SERVICE_FILE="/etc/systemd/system/psiphon.service"
+    XUI_CONFIG_DIR="/etc/x-ui"
+    LOG_FILE="/var/log/psiphon.log"
 
-    echo "[+] Installing Psiphon Tunnel Core..."
-    mkdir -p "$PSIPHON_DIR"
-    curl -L -o "$PSIPHON_BIN" https://github.com/Psiphon-Labs/psiphon-tunnel-core-binaries/raw/master/linux/psiphon-tunnel-core-x86_64 || {
-        echo "[-] Failed to download Psiphon."; return 1; 
+    # Full uninstall with cleanup
+    uninstall_psiphon() {
+        echo -e "${RED}╔════════════════════════════════════╗${NC}"
+        echo -e "${RED}║ [!] FULL UNINSTALL IN PROGRESS... ║${NC}"
+        echo -e "${RED}╚════════════════════════════════════╝${NC}"
+        
+        # Stop and disable service
+        sudo systemctl stop psiphon 2>/dev/null && echo -e "${YELLOW}[+] Service stopped${NC}"
+        sudo systemctl disable psiphon 2>/dev/null && echo -e "${YELLOW}[+] Service disabled${NC}"
+        sudo rm -f "$SERVICE_FILE" && echo -e "${YELLOW}[+] Service file removed${NC}"
+        sudo systemctl daemon-reload
+
+        # Remove 3X-UI outbound configuration
+        if [ -f "$XUI_CONFIG_DIR/config.json" ]; then
+            echo -e "${YELLOW}[+] Removing from 3X-UI config...${NC}"
+            sudo jq 'del(.outbounds[] | select(.tag == "psiphon-outbound"))' \
+                "$XUI_CONFIG_DIR/config.json" > "$XUI_CONFIG_DIR/config.tmp" \
+                && sudo mv "$XUI_CONFIG_DIR/config.tmp" "$XUI_CONFIG_DIR/config.json" \
+                && echo -e "${GREEN}[✓] 3X-UI config cleaned${NC}"
+        fi
+
+        # Clean files
+        sudo rm -rf "$PSIPHON_DIR" && echo -e "${YELLOW}[+] Psiphon directory removed${NC}"
+        sudo rm -f "$LOG_FILE" && echo -e "${YELLOW}[+] Logs cleared${NC}"
+        
+        echo -e "${GREEN}╔════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}║ [✓] PSIPHON COMPLETELY REMOVED     ║${NC}"
+        echo -e "${GREEN}╚════════════════════════════════════╝${NC}"
     }
-    chmod +x "$PSIPHON_BIN"
 
-    echo "[+] Writing config..."
-    cat > "$CONFIG_FILE" <<EOF
+    # Install dependencies
+    install_deps() {
+        echo -e "${BLUE}╔════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║ [+] INSTALLING DEPENDENCIES...    ║${NC}"
+        echo -e "${BLUE}╚════════════════════════════════════╝${NC}"
+        sudo apt update && sudo apt install -y wget unzip python3 python3-pip jq \
+        && pip3 install --upgrade pip || handle_error "Dependency installation failed"
+        echo -e "${GREEN}[✓] Dependencies installed${NC}"
+    }
+
+    # Main installation
+    install_psiphon() {
+        install_deps
+        
+        echo -e "${BLUE}╔════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║ [+] INSTALLING PSIPHON...         ║${NC}"
+        echo -e "${BLUE}╚════════════════════════════════════╝${NC}"
+        
+        sudo mkdir -p "$PSIPHON_DIR" || handle_error "Failed to create directory"
+        cd "$PSIPHON_DIR" || handle_error "Failed to enter directory"
+
+        # Download and extract
+        echo -e "${YELLOW}[+] Downloading Psiphon client...${NC}"
+        wget -q --https-only https://psiphon.ca/psiphon3.zip -O psiphon3.zip \
+        && unzip -q psiphon3.zip \
+        && rm -f psiphon3.zip || handle_error "Download/extraction failed"
+        echo -e "${GREEN}[✓] Psiphon package installed${NC}"
+
+        # Create config
+        sudo bash -c "cat > '$CONFIG_FILE'" << 'EOL'
 {
-  "LocalHttpProxyPort": 8081,
-  "LocalSocksProxyPort": 1081,
-  "UseIndistinguishableTLS": true,
-  "ConnectionPoolSize": 2,
-  "DisableLocalHTTPProxy": false,
-  "Tunnels": [
-    {
-      "Region": "random"
-    }
-  ]
+    "PropagationChannelId": "DEFAULT",
+    "SponsorId": "DEFAULT",
+    "UseIndistinguishableTLS": true,
+    "TunnelWholeDevice": true,
+    "AllowTCPPorts": {"80": "HTTP-ROOT", "443": "HTTPS-ROOT"}
 }
-EOF
+EOL
+        echo -e "${GREEN}[✓] Configuration file created${NC}"
 
-    echo "[+] Creating systemd service..."
-    cat > /etc/systemd/system/psiphon.service <<EOF
+        # Create systemd service
+        sudo bash -c "cat > '$SERVICE_FILE'" << EOL
 [Unit]
-Description=Psiphon Tunnel Core
+Description=Psiphon Client
 After=network.target
 
 [Service]
-ExecStart=$PSIPHON_BIN -config $CONFIG_FILE
+Type=simple
+User=root
+WorkingDirectory=$PSIPHON_DIR
+ExecStart=/usr/bin/python3 $PSIPHON_DIR/psiphon-tunnel-core.py -config $CONFIG_FILE
 Restart=on-failure
-User=nobody
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_BIND_SERVICE
+RestartSec=5s
+StandardOutput=file:$LOG_FILE
+StandardError=file:$LOG_FILE
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOL
+        echo -e "${GREEN}[✓] Systemd service configured${NC}"
 
-    echo "[+] Reloading systemd and starting Psiphon..."
-    systemctl daemon-reload
-    systemctl enable psiphon
-    systemctl start psiphon
+        # Configure 3X-UI outbound
+        if [ -d "$XUI_CONFIG_DIR" ]; then
+            echo -e "${YELLOW}[+] Configuring 3X-UI outbound...${NC}"
+            if ! grep -q "psiphon-outbound" "$XUI_CONFIG_DIR/config.json"; then
+                sudo jq '.outbounds += [{
+                    "protocol": "socks",
+                    "settings": {
+                        "servers": [{
+                            "address": "127.0.0.1",
+                            "port": 1080,
+                            "users": []
+                        }]
+                    },
+                    "tag": "psiphon-outbound"
+                }]' "$XUI_CONFIG_DIR/config.json" > "$XUI_CONFIG_DIR/config.tmp" \
+                && sudo mv "$XUI_CONFIG_DIR/config.tmp" "$XUI_CONFIG_DIR/config.json" \
+                && echo -e "${GREEN}[✓] 3X-UI integration complete${NC}"
+            else
+                echo -e "${YELLOW}[!] Psiphon outbound already exists in 3X-UI config${NC}"
+            fi
+        fi
 
-    echo "[✓] Psiphon installed and running."
-    echo "    - SOCKS5 Proxy: 127.0.0.1:1081"
-    echo "    - HTTP Proxy:  127.0.0.1:8081"
+        sudo systemctl daemon-reload
+        echo -e "${GREEN}╔════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}║ [✓] INSTALLATION COMPLETE          ║${NC}"
+        echo -e "${GREEN}╚════════════════════════════════════╝${NC}"
+        echo -e "Edit config: ${CYAN}$CONFIG_FILE${NC}"
+    }
+
+    # Service control functions
+    start_psiphon() {
+        echo -e "${YELLOW}[+] Starting Psiphon service...${NC}"
+        sudo systemctl start psiphon \
+        && echo -e "${GREEN}[✓] Service started${NC}" \
+        || handle_error "Start failed"
+    }
+
+    stop_psiphon() {
+        echo -e "${YELLOW}[!] Stopping Psiphon service...${NC}"
+        sudo systemctl stop psiphon \
+        && echo -e "${GREEN}[✓] Service stopped${NC}" \
+        || handle_error "Stop failed"
+    }
+
+    # Main menu
+    while true; do
+        echo -e "\n${CYAN}╔════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║ ${CYAN}PSIPHON MANAGER ${CYAN}(3X-UI Integrated) ║${NC}"
+        echo -e "${BLUE}╚════════════════════════════════════╝${NC}"
+        echo -e "${LGREEN}1) ${CYAN}Install/Reinstall${NC}"
+        echo -e "${LGREEN}2) ${GREEN}Start Service${NC}"
+        echo -e "${LGREEN}3) ${YELLOW}Stop Service${NC}"
+        echo -e "${LGREEN}4) ${CYAN}Check Status${NC}"
+        echo -e "${LGREEN}5) ${CYAN}View Logs${NC}"
+        echo -e "${LGREEN}6) ${YELLOW}Full Uninstall${NC}"
+        echo -e "${LGREEN}0) ${YELLOW}Back to Main Menu${NC}"
+        echo -e "${PURPLE}╔════════════════════════════════════╗${NC}"
+        read -p "$(echo -e "${CYAN}Choose option: ${NC}")" choice
+
+        case $choice in
+            1) install_psiphon ;;
+            2) start_psiphon ;;
+            3) stop_psiphon ;;
+            4) echo -e "${BLUE}"; sudo systemctl status psiphon -l; echo -e "${NC}" ;;
+            5) echo -e "${CYAN}"; [ -f "$LOG_FILE" ] && sudo tail -n 20 "$LOG_FILE" || echo "No logs found"; echo -e "${NC}" ;;
+            6) uninstall_psiphon ;;
+            0) break ;;
+            *) echo -e "${RED}Invalid choice!${NC}" ;;
+        esac
+    done
 }
-
-# To use in a menu:
-# install_psiphon
-
 
 ### Random HTML Site ###
 
@@ -1068,7 +1179,7 @@ main_menu() {
             15) uninstall_nginx ;;
             16) random_template_site ;;
             17) tor_menu ;;
-            18) Install_psiphon ;;
+            18) psiphon_management ;;
             19) nginx_reverseProxy ;;
             20) manage_functions ;;
             
