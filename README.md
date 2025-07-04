@@ -27,6 +27,7 @@
             17) tor_menu +3x-ui binding 
             18) nginx_reverseProxy 
             19) manage_functions 
+            20) Psiphone+3x-ui (binding) Installer
 
 
 
