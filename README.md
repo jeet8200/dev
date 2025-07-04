@@ -5,21 +5,20 @@ bash autostartup.sh;
 ```
 
 -------------------------------------
- 1) update_system ;;
- 2) install_utilities ;;
- 3) install_nginx ;;
- 4) manage_nginx ;;
- 5) configure_nginx_wildcard_ssl ;;
- 6) install_x_ui ;;
- 7) handle_reality_ez ;;
- 8) install_hiddify_panel  min/Ubuntu 22+;;
- 9) install_telegram_proxy ;;
-10) install_openvpn ;;
-11) install_fail2ban ;;
-12) create_swap ;;
-13) change_ssh_port ;;
-14) reboot evry 2 day ;;
-15) uninstall_nginx ;;
-16) nginx reverse proxy setups for grpc ws for v2ray configs path secure  (TESTING);;
-("ps") adding some example of using nginx for fake site and revers proxy with cloudflare cdn its so far avoide detection by gfw (under the test)
-17)  17) manage_functions;;  # dynamicly adding or removing functions from the menu list
+==== MTProto Proxy Whitelist Installer ====
+1) Install MTProto Proxy only (choose installation method)
+2) Install Whitelist System (NGINX, PHP, firewall, Fail2ban)
+3) Generate access URL with tokens
+4) Fix permissions
+5) Change Whitelist Password
+6) Check system status
+7) Uninstall everything (full wipe)
+8) Send whitelist link via Telegram
+9) Random FakeHtml
+M) Manage Telegram Users
+A) Clean Old Whitelisted IPs
+C) Manage Cloudflare wildcard SSL certs
+T) Tor Installation
+0) Exit
+===========================================
+Choose an option:
