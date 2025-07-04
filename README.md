@@ -4,7 +4,7 @@
 
 # Quick Start
                                   
-      Curl -O https://raw.githubusercontent.com/jeet8200/dev/main/autostartup.sh &&
+      curl -O https://raw.githubusercontent.com/jeet8200/dev/main/autostartup.sh &&
       chmod +x autostartup.sh && bash autostartup.sh 
 
 ## Features
