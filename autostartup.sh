@@ -1130,6 +1130,526 @@ random_template_site() {
     fi
 }
 
+##installing gfw4n x-ui reverse proxy NGINX
+
+GFW4fun_Installation() {
+    # Color definitions
+    local RED='\033[0;31m'
+    local GREEN='\033[0;32m'
+    local YELLOW='\033[0;33m'
+    local BLUE='\033[0;34m'
+    local CYAN='\033[0;36m'
+    local NC='\033[0m' # No Color
+    
+    # Function to get server IP
+    get_server_ip() {
+        local ip
+        ip=$(hostname -I | awk '{print $1}' 2>/dev/null)
+        [ -z "$ip" ] && ip="YOUR_SERVER_IP"
+        echo "$ip"
+    }
+
+    # Function to completely remove x-ui-pro including fake site
+    complete_uninstall() {
+        echo -e "\n${RED}=== FULL UNINSTALLATION ===${NC}"
+        
+        # Stop and disable service
+        if systemctl is-active --quiet x-ui.service 2>/dev/null; then
+            echo -e "${YELLOW}Stopping x-ui service...${NC}"
+            sudo systemctl stop x-ui
+            sudo systemctl disable x-ui
+        fi
+        
+        # Remove systemd service
+        if [ -f "/etc/systemd/system/x-ui.service" ]; then
+            echo -e "${YELLOW}Removing systemd service...${NC}"
+            sudo rm -f /etc/systemd/system/x-ui.service
+            sudo systemctl daemon-reload
+        fi
+        
+        # Remove installation directory
+        if [ -d "/usr/local/x-ui" ]; then
+            echo -e "${YELLOW}Removing installation files...${NC}"
+            sudo rm -rf /usr/local/x-ui
+        fi
+        
+        # Remove config files
+        if [ -d "/etc/x-ui" ]; then
+            echo -e "${YELLOW}Removing configuration files...${NC}"
+            sudo rm -rf /etc/x-ui
+        fi
+        
+        # Remove log files
+        if [ -f "/var/log/x-ui.log" ]; then
+            echo -e "${YELLOW}Removing log files...${NC}"
+            sudo rm -f /var/log/x-ui.log
+        fi
+        
+        # Remove fake site files
+        if [ -d "/var/www/html" ]; then
+            echo -e "${YELLOW}Removing fake site files...${NC}"
+            sudo rm -rf /var/www/html/*
+        fi
+        
+        # Remove cron jobs
+        echo -e "${YELLOW}Cleaning up cron jobs...${NC}"
+        sudo crontab -l | grep -v 'x-ui' | sudo crontab -
+        
+        echo -e "${GREEN}All x-ui-pro components including fake site have been completely removed.${NC}"
+    }
+
+    # Function to setup fake site
+    setup_fake_site() {
+        echo -e "\n${CYAN}=== Setting Up Random Template/Fake Site ===${NC}"
+        echo -e "${YELLOW}This will install a random template for your x-ui panel${NC}"
+        
+        if ! command -v wget >/dev/null 2>&1; then
+            echo -e "${YELLOW}Installing wget first...${NC}"
+            sudo apt-get install -y wget || sudo yum install -y wget || sudo dnf install -y wget
+        fi
+        
+        echo -e "\n${YELLOW}Downloading and installing random template...${NC}"
+        if sudo bash <(wget -qO- https://raw.githubusercontent.com/GFW4Fun/x-ui-pro/master/x-ui-pro.sh) -RandomTemplate yes; then
+            echo -e "${GREEN}Fake site template installed successfully!${NC}"
+            echo -e "Your panel now appears as a random website at: ${BLUE}http://$(get_server_ip):54321${NC}"
+        else
+            echo -e "${RED}Failed to install fake site template!${NC}"
+            echo -e "Possible causes:"
+            echo -e "- No internet connection"
+            echo -e "- GitHub repository unavailable"
+            echo -e "- Installation script failed"
+            return 1
+        fi
+    }
+
+    # Check if already installed
+    if systemctl is-active --quiet x-ui.service 2>/dev/null; then
+        local panel_url="http://$(get_server_ip):54321"
+        
+        echo -e "\n${CYAN}=== x-ui-pro Detected ===${NC}"
+        echo -e "${YELLOW}x-ui-pro is currently installed and running.${NC}"
+        echo -e "Management panel: ${BLUE}${panel_url}${NC}"
+        
+        while true; do
+            echo -e "\n${CYAN}Available options:${NC}"
+            echo "1. Reinstall with current settings"
+            echo "2. Reinstall with custom settings"
+            echo "3. Uninstall x-ui-pro"
+            echo "4. Reset to factory (complete clean install)"
+            echo "5. Setup fake site/random template"
+            echo "6. Check service status"
+            echo "7. Return to main menu"
+            
+            read -p "Enter your choice [1-7]: " choice
+            case $choice in
+                1)
+                    echo -e "\n${YELLOW}Reinstalling with current settings...${NC}"
+                    if ! sudo bash <(wget -qO- https://raw.githubusercontent.com/GFW4Fun/x-ui-pro/master/x-ui-pro.sh) -panel 1 -xuiver last; then
+                        echo -e "${RED}Reinstallation failed!${NC}"
+                    else
+                        echo -e "${GREEN}Reinstallation completed successfully!${NC}"
+                    fi
+                    ;;
+                2)
+                    echo -e "\n${CYAN}Custom Reinstallation${NC}"
+                    read -p "Enable CDN? [on/off] (default: off): " CDN
+                    read -p "Enable secure mode? [yes/no] (default: no): " SECURE
+                    read -p "Country code (2 letters, default: xx): " COUNTRY
+                    
+                    CDN=${CDN:-off}
+                    SECURE=${SECURE:-no}
+                    COUNTRY=${COUNTRY:-xx}
+                    
+                    if ! sudo bash <(wget -qO- https://raw.githubusercontent.com/GFW4Fun/x-ui-pro/master/x-ui-pro.sh) -panel 1 -xuiver last -cdn "$CDN" -secure "$SECURE" -country "$COUNTRY"; then
+                        echo -e "${RED}Custom reinstallation failed!${NC}"
+                    else
+                        echo -e "${GREEN}Custom reinstallation completed successfully!${NC}"
+                    fi
+                    ;;
+                3)
+                    if confirm "Are you sure you want to uninstall x-ui-pro?"; then
+                        echo -e "\n${YELLOW}Uninstalling x-ui-pro...${NC}"
+                        if ! sudo bash <(wget -qO- https://raw.githubusercontent.com/GFW4Fun/x-ui-pro/master/x-ui-pro.sh) --remove; then
+                            echo -e "${RED}Uninstallation failed! You may need to remove it manually.${NC}"
+                        else
+                            echo -e "${GREEN}x-ui-pro has been successfully uninstalled.${NC}"
+                        fi
+                    fi
+                    ;;
+                4)
+                    if confirm "${RED}WARNING: This will COMPLETELY remove x-ui-pro and all its data including fake site before fresh install. Continue?${NC}"; then
+                        complete_uninstall
+                        echo -e "\n${YELLOW}Proceeding with fresh installation...${NC}"
+                        if ! sudo bash <(wget -qO- https://raw.githubusercontent.com/GFW4Fun/x-ui-pro/master/x-ui-pro.sh) -panel 1 -xuiver last; then
+                            echo -e "${RED}Fresh installation failed!${NC}"
+                        else
+                            echo -e "${GREEN}Fresh installation completed successfully!${NC}"
+                            echo -e "New management panel: ${BLUE}http://$(get_server_ip):54321${NC}"
+                        fi
+                    else
+                        echo -e "${YELLOW}Reset cancelled.${NC}"
+                    fi
+                    ;;
+                5)
+                    if confirm "This will setup a random template/fake site for your x-ui panel. Continue?"; then
+                        setup_fake_site
+                    else
+                        echo -e "${YELLOW}Operation cancelled.${NC}"
+                    fi
+                    ;;
+                6)
+                    echo -e "\n${CYAN}=== x-ui-pro Service Status ===${NC}"
+                    systemctl status x-ui --no-pager || echo -e "${RED}Could not get service status${NC}"
+                    ;;
+                7)
+                    return 0
+                    ;;
+                *)
+                    echo -e "${RED}Invalid option. Please try again.${NC}"
+                    continue
+                    ;;
+            esac
+            
+            read -p "Press Enter to continue..."
+            return 0
+        done
+    fi
+
+    # If not installed, proceed with fresh installation
+    echo -e "\n${CYAN}=== GFW4Fun x-ui-pro Installation ===${NC}"
+    echo -e "${YELLOW}This will install x-ui-pro with the following defaults:"
+    echo -e "CDN: ${BLUE}off${NC}"
+    echo -e "Secure Mode: ${BLUE}no${NC}"
+    echo -e "Country Code: ${BLUE}xx${NC}"
+    echo -e "${YELLOW}You can customize these options.${NC}\n"
+    
+    # Ask for customization
+    if confirm "Would you like to customize the installation options?"; then
+        echo -e "\n${CYAN}Custom Installation Options${NC}"
+        read -p "Enable CDN? [on/off] (default: off): " CDN
+        read -p "Enable secure mode? [yes/no] (default: no): " SECURE
+        read -p "Country code (2 letters, default: xx): " COUNTRY
+        
+        CDN=${CDN:-off}
+        SECURE=${SECURE:-no}
+        COUNTRY=${COUNTRY:-xx}
+    else
+        CDN="off"
+        SECURE="no"
+        COUNTRY="xx"
+    fi
+    
+    # Execute installation
+    echo -e "\n${YELLOW}Starting installation...${NC}"
+    if ! command -v wget >/dev/null 2>&1; then
+        echo -e "${YELLOW}Installing wget first...${NC}"
+        sudo apt-get install -y wget || sudo yum install -y wget || sudo dnf install -y wget
+    fi
+    
+    if sudo bash <(wget -qO- https://raw.githubusercontent.com/GFW4Fun/x-ui-pro/master/x-ui-pro.sh) -panel 1 -xuiver last -cdn "$CDN" -secure "$SECURE" -country "$COUNTRY"; then
+        echo -e "\n${GREEN}Installation completed successfully!${NC}"
+        echo -e "Management panel: ${BLUE}http://$(get_server_ip):54321${NC}"
+        echo -e "Default credentials:"
+        echo -e "Username: ${BLUE}admin${NC}"
+        echo -e "Password: ${BLUE}admin${NC}"
+        echo -e "\n${YELLOW}Please change the default password immediately!${NC}"
+        
+        if confirm "Would you like to setup a random template/fake site now?"; then
+            setup_fake_site
+        fi
+    else
+        echo -e "\n${RED}Installation failed!${NC}"
+        echo -e "Possible causes:"
+        echo -e "- No internet connection"
+        echo -e "- GitHub repository unavailable"
+        echo -e "- Package manager (apt/dnf/yum) issues"
+        return 1
+    fi
+}
+
+# Helper function for confirmations
+confirm() {
+    local prompt="$* [y/N]: "
+    local reply
+    
+    while true; do
+        read -rp "$prompt" -n 1 reply
+        case "$reply" in
+            [Yy]) return 0 ;;
+            [Nn]) return 1 ;;
+            *) echo -e "\nPlease answer y or n." ;;
+        esac
+    done
+}
+
+#mangeing linux users
+
+
+
+# User Management Function with Root/Non-Root distinction
+manage_users() {
+    # Check if running as root
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "Error: This function must be run as root or with sudo privileges." >&2
+        return 1
+    fi
+
+    while true; do
+        echo ""
+        echo "Linux User Management Menu"
+        echo "1. Create a new non-root user"
+        echo "2. Create a new administrative (sudo) user"
+        echo "3. Delete a user"
+        echo "4. List all users with privileges"
+        echo "5. Demote user to non-root"
+        echo "6. Promote user to administrative"
+        echo "7. Return to main menu"
+        read -p "Enter your choice [1-7]: " choice
+
+        case $choice in
+            1)
+                create_user false
+                ;;
+            2)
+                create_user true
+                ;;
+            3)
+                delete_user
+                ;;
+            4)
+                list_users
+                ;;
+            5)
+                change_privileges false
+                ;;
+            6)
+                change_privileges true
+                ;;
+            7)
+                echo "Returning to main menu..."
+                return 0
+                ;;
+            *)
+                echo "Invalid option. Please try again." >&2
+                ;;
+        esac
+    done
+}
+
+# Function to create a new user
+# Parameter: $1 - true for admin/sudo user, false for regular user
+create_user() {
+    local is_admin=$1
+    local username=""
+    local useradd_cmd=""
+    local user_type="non-root"
+
+    if [ "$is_admin" = true ]; then
+        user_type="administrative (sudo)"
+    fi
+
+    while true; do
+        read -p "Enter username for new $user_type user: " username
+        
+        # Validate username
+        if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+            echo "Error: Invalid username. Must start with lowercase letter or underscore, and contain only letters, numbers, hyphens, or underscores." >&2
+            continue
+        fi
+        
+        # Check if user already exists
+        if id "$username" &>/dev/null; then
+            echo "Error: User '$username' already exists." >&2
+            continue
+        fi
+        
+        break
+    done
+
+    read -p "Create home directory? [Y/n]: " create_home
+    read -p "Set custom shell (default: /bin/bash): " user_shell
+    
+    # Set default values
+    user_shell=${user_shell:-/bin/bash}
+    create_home=${create_home:-y}
+    
+    # Build the useradd command
+    useradd_cmd="useradd"
+    
+    if [[ "$create_home" =~ ^[Yy] ]]; then
+        useradd_cmd+=" -m"
+    else
+        useradd_cmd+=" -M"
+    fi
+    
+    useradd_cmd+=" -s $user_shell $username"
+    
+    # Execute user creation
+    if ! eval "$useradd_cmd"; then
+        echo "Error: Failed to create user '$username'." >&2
+        return 1
+    fi
+    
+    # Set password
+    if ! passwd "$username"; then
+        echo "Warning: User created but password setting failed for '$username'." >&2
+    fi
+    
+    # Handle admin privileges
+    if [ "$is_admin" = true ]; then
+        if usermod -aG sudo "$username"; then
+            echo "User '$username' created with administrative privileges."
+        else
+            echo "Warning: User created but failed to add to sudoers group." >&2
+        fi
+    else
+        # Ensure user is not in sudo group (in case of group inheritance)
+        if gpasswd -d "$username" sudo &>/dev/null; then
+            echo "User '$username' is confirmed as non-root user."
+        else
+            echo "User '$username' created as non-root user."
+        fi
+    fi
+}
+
+# Function to delete a user
+delete_user() {
+    local username=""
+    
+    while true; do
+        read -p "Enter username to delete: " username
+        
+        # Validate username exists
+        if ! id "$username" &>/dev/null; then
+            echo "Error: User '$username' does not exist." >&2
+            continue
+        fi
+        
+        # Prevent deletion of root
+        if [ "$username" = "root" ]; then
+            echo "Error: Cannot delete root user." >&2
+            return 1
+        fi
+        
+        # Warn if deleting current user
+        if [ "$username" = "$(whoami)" ]; then
+            echo "Warning: You are about to delete your own account!" >&2
+            read -p "Are you sure you want to continue? [y/N]: " confirm
+            if [[ ! "$confirm" =~ ^[Yy] ]]; then
+                return 0
+            fi
+        fi
+        
+        break
+    done
+    
+    read -p "Delete user's home directory and mail spool? [y/N]: " del_files
+    read -p "Force deletion (even if user is logged in)? [y/N]: " force_del
+    
+    # Build the userdel command
+    userdel_cmd="userdel"
+    
+    if [[ "$del_files" =~ ^[Yy] ]]; then
+        userdel_cmd+=" -r"
+    fi
+    
+    if [[ "$force_del" =~ ^[Yy] ]]; then
+        userdel_cmd+=" -f"
+    fi
+    
+    userdel_cmd+=" $username"
+    
+    # Execute user deletion
+    if eval "$userdel_cmd"; then
+        echo "User '$username' deleted successfully."
+    else
+        echo "Error: Failed to delete user '$username'." >&2
+        return 1
+    fi
+}
+
+# Function to change user privileges
+# Parameter: $1 - true to make admin, false to make non-admin
+change_privileges() {
+    local make_admin=$1
+    local username=""
+    local action=""
+    
+    if [ "$make_admin" = true ]; then
+        action="promote to administrative"
+    else
+        action="demote to non-root"
+    fi
+
+    while true; do
+        read -p "Enter username to $action: " username
+        
+        # Validate username exists
+        if ! id "$username" &>/dev/null; then
+            echo "Error: User '$username' does not exist." >&2
+            continue
+        fi
+        
+        # Prevent modifying root
+        if [ "$username" = "root" ]; then
+            echo "Error: Cannot modify root user privileges." >&2
+            return 1
+        fi
+        
+        break
+    done
+
+    if [ "$make_admin" = true ]; then
+        if usermod -aG sudo "$username"; then
+            echo "User '$username' has been promoted to administrative user."
+        else
+            echo "Error: Failed to promote user '$username'." >&2
+            return 1
+        fi
+    else
+        if gpasswd -d "$username" sudo; then
+            echo "User '$username' has been demoted to non-root user."
+        else
+            echo "User '$username' is confirmed as non-root user."
+        fi
+    fi
+}
+
+# Function to list users with permissions
+list_users() {
+    echo ""
+    echo "Listing all users with privileges:"
+    echo "================================================"
+    printf "%-20s %-10s %-15s %s\n" "USERNAME" "UID" "TYPE" "GROUPS"
+    echo "------------------------------------------------"
+    
+    # Get all users from /etc/passwd
+    while IFS=: read -r username _ uid _ _ home shell; do
+        # Skip system users (UID < 1000) except root
+        if [ "$uid" -ge 1000 ] || [ "$username" = "root" ]; then
+            # Get user groups
+            groups=$(groups "$username" 2>/dev/null | cut -d: -f2 | sed 's/^ //')
+            
+            # Determine user type
+            if [ "$username" = "root" ]; then
+                user_type="ROOT"
+            elif echo "$groups" | grep -q '\bsudo\b'; then
+                user_type="Admin"
+            else
+                user_type="Regular"
+            fi
+            
+            printf "%-20s %-10s %-15s %s\n" "$username" "$uid" "$user_type" "$groups"
+        fi
+    done < /etc/passwd
+    
+    echo "================================================"
+    echo "Note: Only users with UID >= 1000 and root are shown"
+}
+
+# Example of how to call the function in your main script
+# manage_users
+
 ### Main Menu ###
 
 main_menu() {
@@ -1142,6 +1662,7 @@ main_menu() {
         echo "5) Configure Nginx Wildcard SSL"
         echo "6) Install x-ui"
         echo "7) Reality-EZ Menu"
+		echo "X). Install GFW4Fun x-ui-pro (testing)" 
         echo "8) Install Hiddify Panel"
         echo "9) Install Telegram MTProto Proxy"
         echo "10) Install OpenVPN and Stunnel"
@@ -1154,7 +1675,8 @@ main_menu() {
         echo "17) Tor Installation"
         echo "18) Psiphone+3x-ui (binding) Installer"
         echo "19) Nginx Reverse Proxy Setup"
-        echo "20) Manage Functions"
+        echo "20) Manage Linux User & privilages (testing)"
+        echo "21) Manage Functions (testing)"
         
         echo "0) Exit"
         echo -e "${LGREEN}=====================${NC}"
@@ -1169,6 +1691,7 @@ main_menu() {
             5) configure_nginx_wildcard_ssl ;;
             6) install_x_ui ;;
             7) handle_reality_ez ;;
+		  X|x) GFW4fun_Installation ;;
             8) install_hiddify_panel ;;
             9) install_telegram_proxy ;;
             10) install_openvpn ;;
@@ -1181,7 +1704,8 @@ main_menu() {
             17) tor_menu ;;
             18) psiphon_management ;;
             19) nginx_reverseProxy ;;
-            20) manage_functions ;;
+            20) manage_users ;;
+            21) manage_functions ;;
             
             0) 
                 echo -e "${GREEN}Exiting...${NC}"
